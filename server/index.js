@@ -19,6 +19,7 @@ const dashboardUsername = process.env.DASHBOARD_USERNAME || process.env.MONITOR_
 const dashboardPassword = process.env.DASHBOARD_PASSWORD || process.env.MONITOR_PASSWORD || apiToken;
 const sessionSecret = process.env.SESSION_SECRET || process.env.MONITOR_SECRET_KEY || runtimeSecret;
 const sessionTtlHours = Number(process.env.SESSION_TTL_HOURS || 12);
+const refreshCadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 6);
 const loginWindowMs = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const loginMaxFailures = Number(process.env.LOGIN_RATE_LIMIT_MAX_FAILURES || 8);
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://127.0.0.1:5173,http://localhost:5173")
@@ -152,7 +153,7 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     host,
-    cadenceHours: 12,
+    cadenceHours: refreshCadenceHours,
     auth: "dashboard-login"
   });
 });

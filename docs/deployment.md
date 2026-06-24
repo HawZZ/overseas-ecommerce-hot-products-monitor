@@ -29,6 +29,7 @@ API_PORT=8787
 DASHBOARD_USERNAME=你的登录账号
 DASHBOARD_PASSWORD=换成强密码
 SESSION_SECRET=换成另一段长随机字符串
+REFRESH_CADENCE_HOURS=6
 CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,https://YOUR_GITHUB_USERNAME.github.io
 ```
 
@@ -39,7 +40,7 @@ npm run refresh
 npm run server
 ```
 
-4. 每 12 小时更新：
+4. 按环境变量频率更新，默认每 6 小时：
 
 ```bash
 npm run scheduler
@@ -48,7 +49,7 @@ npm run scheduler
 也可以使用系统级定时任务：
 
 ```bash
-0 */12 * * * cd /home/ec2-user/overseas-ecommerce-hot-products-monitor && /usr/bin/npm run refresh >> data/refresh.log 2>&1
+0 */6 * * * cd /home/ec2-user/overseas-ecommerce-hot-products-monitor && /usr/bin/npm run refresh >> data/refresh.log 2>&1
 ```
 
 ## GitHub Pages 前端与 tunnel
@@ -89,4 +90,14 @@ npm run refresh
 npm run refresh:ai
 ```
 
-这会读取 `.env` 中的 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。脚本会把看板快照压缩成结构化输入，要求模型只基于给定数据输出 wiki，避免在每次 12 小时刷新时产生不必要成本。
+这会读取 `.env` 中的 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。脚本会把看板快照压缩成结构化输入，要求模型只基于给定数据输出 wiki，避免在常规刷新时产生不必要成本。
+
+## 工作流产物
+
+登录后的工作台包含：
+
+- 指标和告警：North Star、输入指标、健康指标、业务指标和响应时间。
+- 区域/品类机会池：TAM、SAM、SOM、JTBD、增长率、竞品强度和推荐动作。
+- SKU筛选：按价格带、区域、品类和阶段筛选，展示毛利、口碑、搜索增速和90天趋势。
+- 4P工作台：每个SKU给出 Product、Price、Place、Promotion 动作。
+- 选品wiki和90天GTM：把验证通过的爆品逻辑沉淀为复用规则。

@@ -14,11 +14,26 @@
 
 `data/latest-snapshot.json` 包含：
 
+- `workflowVersion`：当前工作流版本。
+- `refreshCadenceHours`：后端刷新频率，默认 6 小时。
+- `workflowSteps`：PM 组合工作流步骤和每步产物。
+- `metricsFramework`：North Star、输入指标、健康指标、业务指标、定义、来源、目标和告警阈值。
+- `alerts`：需要运营、供应链、产品或数据处理的告警队列。
+- `marketSegments`：买家细分、JTBD、痛点、收益和适配说明。
+- `opportunityPools`：区域/品类机会池，包含 TAM、SAM、SOM、增长率、竞争强度和推荐动作。
 - `priceTiers`：0-5、5-15、15-30、30-50、50-70、70-100、100-200 美元。
 - `tierRanks`：每个价格带 Top10 商品。
+- `skuShortlist`：跨价格带的重点 SKU 筛选清单。
 - `trend`：每个商品过去 90 天每日数据。
 - `summary`：销量、搜索、成单率、客单价的当前值和趋势变化。
+- `pricing`：目标价、竞品中位价、全成本、平台佣金、税费、毛利率、价格策略和价格实验。
+- `competitors`：直接竞品、定位、优势、弱点和威胁等级。
+- `cohort`：30 天 cohort 对比、趋势异常、留存代理指标和下一步验证动作。
+- `sentiment`：评论/口碑代理信号，使用 -1 到 +1 的情绪分。
+- `product4p`：当前 SKU 的 Product、Price、Place、Promotion 执行动作。
 - `wikiSignals`：沉淀到选品 wiki 的品类级信号。
+- `strategyCanvas`：Product Strategy Canvas 九宫格。
+- `gtmPlaybook`：渠道、信息、KPI、90 天路线图和风险缓解。
 
 ## 生产接入建议
 

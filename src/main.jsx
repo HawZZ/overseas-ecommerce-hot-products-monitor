@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowClockwise,
-  BookOpenText,
+  BellRinging,
   ChartLineUp,
   CheckCircle,
   Database,
@@ -10,14 +10,21 @@ import {
   GlobeHemisphereEast,
   LockKey,
   MagnifyingGlass,
+  MapTrifold,
+  Package,
+  Path,
   Plug,
   ShieldCheck,
-  TrendUp,
+  ShoppingCart,
+  Sparkle,
+  Tag,
   WarningCircle
 } from "@phosphor-icons/react";
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -103,20 +110,31 @@ async function requestApi(apiUrl, path, options = {}) {
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat("zh-CN").format(Math.round(value));
+  return new Intl.NumberFormat("zh-CN").format(Math.round(Number(value) || 0));
 }
 
 function formatPercent(value, digits = 1) {
-  return `${(value * 100).toFixed(digits)}%`;
+  return `${((Number(value) || 0) * 100).toFixed(digits)}%`;
 }
 
 function formatTrend(value, suffix = "%") {
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}${suffix}`;
+  const numeric = Number(value) || 0;
+  const sign = numeric > 0 ? "+" : "";
+  return `${sign}${numeric.toFixed(1)}${suffix}`;
 }
 
-function compactNumber(value) {
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+function formatUsdM(value) {
+  return `$${formatNumber(Number(value) || 0)}M`;
+}
+
+function stageLabel(stage) {
+  const labels = {
+    scale: "放量",
+    test: "测试",
+    "fix-margin": "修毛利",
+    watch: "观察"
+  };
+  return labels[stage] || stage || "观察";
 }
 
 async function loadApiSnapshot(apiUrl, sessionToken) {
@@ -337,39 +355,41 @@ function App() {
     refresh
   } = useSnapshot();
   const [regionId, setRegionId] = useState("all");
-  const [platformId, setPlatformId] = useState("all");
-  const [tierId, setTierId] = useState("15-30");
+  const [categoryId, setCategoryId] = useState("all");
+  const [tierId, setTierId] = useState("all");
+  const [stage, setStage] = useState("all");
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [query, setQuery] = useState("");
 
-  const filteredProducts = useMemo(() => {
+  const products = useMemo(() => {
     if (!snapshot) return [];
-    const rows = snapshot.tierRanks.flatMap((tier) => tier.products);
-    return rows
+    const shortlist = snapshot.skuShortlist || snapshot.tierRanks?.flatMap((tier) => tier.products) || [];
+    return shortlist
       .filter((product) => regionId === "all" || product.regionId === regionId)
-      .filter((product) => platformId === "all" || product.platformId === platformId)
+      .filter((product) => categoryId === "all" || product.categoryId === categoryId)
       .filter((product) => tierId === "all" || product.priceTierId === tierId)
+      .filter((product) => stage === "all" || product.stage === stage)
       .filter((product) => {
         if (!query.trim()) return true;
-        const text = `${product.title} ${product.categoryName} ${product.platformName} ${product.regionName}`.toLowerCase();
+        const text = `${product.title} ${product.categoryName} ${product.platformName} ${product.regionName} ${product.priceTierLabel}`.toLowerCase();
         return text.includes(query.trim().toLowerCase());
       })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10)
+      .sort((a, b) => b.opportunityScore - a.opportunityScore)
+      .slice(0, 30)
       .map((product, index) => ({ ...product, rank: index + 1 }));
-  }, [snapshot, regionId, platformId, tierId, query]);
+  }, [snapshot, regionId, categoryId, tierId, stage, query]);
 
   const selectedProduct = useMemo(() => {
     if (!snapshot) return null;
-    const rows = snapshot.tierRanks.flatMap((tier) => tier.products);
-    return rows.find((product) => product.id === selectedProductId) || filteredProducts[0] || null;
-  }, [snapshot, selectedProductId, filteredProducts]);
+    const allProducts = snapshot.skuShortlist || snapshot.tierRanks?.flatMap((tier) => tier.products) || [];
+    return allProducts.find((product) => product.id === selectedProductId) || products[0] || null;
+  }, [snapshot, selectedProductId, products]);
 
   useEffect(() => {
-    if (filteredProducts[0] && !filteredProducts.some((product) => product.id === selectedProductId)) {
-      setSelectedProductId(filteredProducts[0].id);
+    if (products[0] && !products.some((product) => product.id === selectedProductId)) {
+      setSelectedProductId(products[0].id);
     }
-  }, [filteredProducts, selectedProductId]);
+  }, [products, selectedProductId]);
 
   if (!snapshot) {
     return (
@@ -386,9 +406,7 @@ function App() {
     );
   }
 
-  const platforms = regionId === "all"
-    ? snapshot.regions.flatMap((region) => region.platforms)
-    : snapshot.regions.find((region) => region.id === regionId)?.platforms || [];
+  const categories = snapshot.wikiSignals || [];
 
   return (
     <div className="app-shell">
@@ -398,7 +416,7 @@ function App() {
             <GlobeHemisphereEast size={22} weight="duotone" />
             <span>海外电商平台爆品监控</span>
           </div>
-          <p>按区域、平台和价格带追踪90天销量、搜索、成单率与客单价趋势。</p>
+          <p>用PM组合工作流把区域机会、SKU筛选、趋势口碑和4P动作连成一个工作台。</p>
         </div>
         <StatusPill status={status} source={source} generatedAt={snapshot.generatedAt} sessionUser={sessionUser} />
       </header>
@@ -424,13 +442,13 @@ function App() {
                   placeholder="登录后自动生成"
                 />
               </label>
-              <button className="primary-button" onClick={logout} type="button">
-                <LockKey size={16} weight="bold" />
-                退出
-              </button>
-              <button className="secondary-button" onClick={refresh} type="button">
+              <button className="primary-button" onClick={refresh} type="button">
                 <ArrowClockwise size={16} weight="bold" />
                 刷新
+              </button>
+              <button className="secondary-button" onClick={logout} type="button">
+                <LockKey size={16} weight="bold" />
+                退出
               </button>
             </div>
           </div>
@@ -438,34 +456,24 @@ function App() {
           <div className="filter-card">
             <div className="section-title">
               <Funnel size={18} weight="duotone" />
-              <span>筛选维度</span>
+              <span>工作台筛选</span>
             </div>
             <div className="filter-grid">
               <label>
                 区域
-                <select
-                  value={regionId}
-                  onChange={(event) => {
-                    setRegionId(event.target.value);
-                    setPlatformId("all");
-                  }}
-                >
+                <select value={regionId} onChange={(event) => setRegionId(event.target.value)}>
                   <option value="all">全部区域</option>
                   {snapshot.regions.map((region) => (
-                    <option key={region.id} value={region.id}>
-                      {region.name}
-                    </option>
+                    <option key={region.id} value={region.id}>{region.name}</option>
                   ))}
                 </select>
               </label>
               <label>
-                平台
-                <select value={platformId} onChange={(event) => setPlatformId(event.target.value)}>
-                  <option value="all">全部平台</option>
-                  {platforms.map((platform) => (
-                    <option key={platform.id} value={platform.id}>
-                      {platform.name}
-                    </option>
+                品类
+                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                  <option value="all">全部品类</option>
+                  {categories.map((category) => (
+                    <option key={category.categoryId} value={category.categoryId}>{category.categoryName}</option>
                   ))}
                 </select>
               </label>
@@ -474,42 +482,57 @@ function App() {
                 <select value={tierId} onChange={(event) => setTierId(event.target.value)}>
                   <option value="all">全部价格带</option>
                   {snapshot.priceTiers.map((tier) => (
-                    <option key={tier.id} value={tier.id}>
-                      {tier.label}
-                    </option>
+                    <option key={tier.id} value={tier.id}>{tier.label}</option>
                   ))}
                 </select>
               </label>
               <label>
+                阶段
+                <select value={stage} onChange={(event) => setStage(event.target.value)}>
+                  <option value="all">全部阶段</option>
+                  <option value="scale">放量</option>
+                  <option value="test">测试</option>
+                  <option value="watch">观察</option>
+                  <option value="fix-margin">修毛利</option>
+                </select>
+              </label>
+              <label className="wide-filter">
                 搜索
                 <span className="search-box">
                   <MagnifyingGlass size={15} weight="bold" />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="品类、平台、商品" />
+                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SKU、品类、平台、区域" />
                 </span>
               </label>
             </div>
           </div>
         </section>
 
-        <MetricStrip snapshot={snapshot} />
+        <MetricsCommandCenter snapshot={snapshot} />
+        <WorkflowRail steps={snapshot.workflowSteps || []} />
 
         <section className="dashboard-grid">
-          <PlatformCoverage snapshot={snapshot} />
-          <TopProducts
-            products={filteredProducts}
-            selectedProductId={selectedProduct?.id}
-            onSelect={setSelectedProductId}
-          />
+          <OpportunityPools snapshot={snapshot} />
+          <SkuScreening products={products} selectedProductId={selectedProduct?.id} onSelect={setSelectedProductId} />
         </section>
 
         <section className="detail-grid">
           <ProductDetail product={selectedProduct} />
+          <FourPWorkbench product={selectedProduct} strategyCanvas={snapshot.strategyCanvas} gtmPlaybook={snapshot.gtmPlaybook} />
+        </section>
+
+        <section className="dashboard-grid">
+          <MarketSegments snapshot={snapshot} />
+          <PlatformCoverage snapshot={snapshot} />
+        </section>
+
+        <section className="detail-grid">
           <WikiPanel snapshot={snapshot} />
+          <GtmPanel gtmPlaybook={snapshot.gtmPlaybook} />
         </section>
 
         <section className="source-section">
           <SourcePanel snapshot={snapshot} />
-          <SecurityPanel />
+          <SecurityPanel snapshot={snapshot} />
         </section>
       </main>
     </div>
@@ -530,7 +553,7 @@ function LoginShell({ status, apiUrl, username, password, setApiUrl, setUsername
             <Database size={22} weight="duotone" />
             <span>海外电商平台爆品监控</span>
           </div>
-          <p>请先使用监控面板账号密码登录，后端认证通过后才会返回数据。</p>
+          <p>请先使用监控面板账号密码登录，后端认证通过后才会返回工作台数据。</p>
         </div>
         <div className={`status-pill ${status.state}`}>
           <LockKey size={18} weight="bold" />
@@ -584,76 +607,114 @@ function StatusPill({ status, source, generatedAt, sessionUser }) {
       <Icon size={18} weight="bold" />
       <div>
         <strong>{status.message}</strong>
-        <span>
-          {source === "local-api" ? `后端 API / ${sessionUser}` : "静态快照"} / {new Date(generatedAt).toLocaleString("zh-CN")}
-        </span>
+        <span>{source === "local-api" ? `后端 API / ${sessionUser}` : "静态快照"} / {new Date(generatedAt).toLocaleString("zh-CN")}</span>
       </div>
     </div>
   );
 }
 
-function MetricStrip({ snapshot }) {
-  const totals = useMemo(() => {
-    const products = snapshot.tierRanks.flatMap((tier) => tier.products);
-    return {
-      products: products.length,
-      platforms: snapshot.regions.reduce((sum, region) => sum + region.platforms.length, 0),
-      sales: products.reduce((sum, product) => sum + product.summary.sales90d, 0),
-      search: products.reduce((sum, product) => sum + product.summary.search90d, 0)
-    };
-  }, [snapshot]);
-
-  const metrics = [
-    { label: "监控区域", value: snapshot.regions.length, icon: GlobeHemisphereEast },
-    { label: "数据平台", value: totals.platforms, icon: Database },
-    { label: "价格带榜单", value: snapshot.priceTiers.length, icon: ChartLineUp },
-    { label: "90天销量", value: compactNumber(totals.sales), icon: TrendUp },
-    { label: "90天搜索", value: compactNumber(totals.search), icon: MagnifyingGlass }
+function MetricsCommandCenter({ snapshot }) {
+  const metrics = snapshot.metricsFramework;
+  const alerts = snapshot.alerts || [];
+  const topNumbers = [
+    { label: metrics.northStar.name, value: metrics.northStar.value, sub: metrics.northStar.target, icon: Sparkle },
+    { label: "高优先级机会池", value: metrics.inputMetrics.find((item) => item.name === "高优先级机会池")?.value ?? 0, sub: "区域/品类机会", icon: MapTrifold },
+    { label: "SKU验证通过率", value: formatPercent(metrics.inputMetrics.find((item) => item.name === "SKU验证通过率")?.value ?? 0), sub: "test与scale阶段", icon: Funnel },
+    { label: "毛利安全垫", value: formatPercent(metrics.inputMetrics.find((item) => item.name === "平均毛利安全垫")?.value ?? 0), sub: "全成本后毛利", icon: Tag },
+    { label: "口碑均分", value: metrics.inputMetrics.find((item) => item.name === "平均口碑分")?.value ?? 0, sub: "-1到+1", icon: BellRinging }
   ];
 
   return (
-    <section className="metric-strip" aria-label="核心指标">
-      {metrics.map((metric) => {
-        const Icon = metric.icon;
-        return (
-          <div className="metric-cell" key={metric.label}>
-            <Icon size={19} weight="duotone" />
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
+    <section className="command-center" aria-label="指标和告警">
+      <div className="metric-strip">
+        {topNumbers.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <div className="metric-cell" key={metric.label}>
+              <Icon size={19} weight="duotone" />
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+              <small>{metric.sub}</small>
+            </div>
+          );
+        })}
+      </div>
+      <div className="panel alert-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>告警队列</h2>
+            <p>只展示会改变动作的阈值，按毛利、口碑、搜索承接和数据质量触发。</p>
           </div>
-        );
-      })}
+          <span className="cadence-badge">每{snapshot.refreshCadenceHours}小时刷新</span>
+        </div>
+        {alerts.length === 0 ? (
+          <div className="empty-state">当前没有高优先级告警。</div>
+        ) : (
+          <div className="alert-list">
+            {alerts.slice(0, 5).map((alert) => (
+              <article className={`alert-row ${alert.severity}`} key={alert.id}>
+                <WarningCircle size={18} weight="duotone" />
+                <div>
+                  <strong>{alert.title}</strong>
+                  <span>{alert.subject} / {alert.owner} / {alert.responseTimeHours}小时内处理</span>
+                </div>
+                <p>{alert.action}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
-function PlatformCoverage({ snapshot }) {
+function WorkflowRail({ steps }) {
+  return (
+    <section className="workflow-rail" aria-label="PM组合工作流">
+      {steps.map((step) => (
+        <article key={step.skill}>
+          <span className="workflow-icon"><Path size={18} weight="duotone" /></span>
+          <strong>{step.title}</strong>
+          <small>{step.skill}</small>
+          <p>{step.purpose}</p>
+          <em>{step.output}</em>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function OpportunityPools({ snapshot }) {
+  const pools = snapshot.opportunityPools || [];
   return (
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <h2>区域平台覆盖</h2>
-          <p>Top5平台按公开资料和可接入性排序，份额口径在来源中标注。</p>
+          <h2>区域/品类机会池</h2>
+          <p>market-segments和market-sizing输出，包含JTBD、TAM/SAM/SOM、增长率和优先级。</p>
         </div>
       </div>
-      <div className="region-list">
-        {snapshot.regions.map((region) => (
-          <article className="region-block" key={region.id}>
-            <div className="region-heading">
-              <strong>{region.name}</strong>
-              <span>{region.basis}</span>
+      <div className="opportunity-list">
+        {pools.slice(0, 8).map((pool) => (
+          <article className="opportunity-card" key={pool.id}>
+            <div className="opportunity-top">
+              <div>
+                <strong>{pool.regionName} / {pool.categoryName}</strong>
+                <span>{pool.segmentName}</span>
+              </div>
+              <span className={`priority-badge ${pool.priority === "高优先级" ? "high" : pool.priority === "验证池" ? "medium" : "low"}`}>{pool.priority}</span>
             </div>
-            <div className="platform-list">
-              {region.platforms.map((platform) => (
-                <div className="platform-row" key={platform.id}>
-                  <span className="rank-mark">{platform.rank}</span>
-                  <span className="platform-name">{platform.name}</span>
-                  <span className="platform-share">
-                    {platform.marketSharePercent ? `${platform.marketSharePercent}%` : `权重 ${platform.platformWeight}`}
-                  </span>
-                  <span className={`confidence ${platform.confidence}`}>{platform.confidence}</span>
-                </div>
-              ))}
+            <p>{pool.jtbd}</p>
+            <div className="sizing-grid">
+              <SummaryCell label="TAM" value={formatUsdM(pool.tamUsdM)} />
+              <SummaryCell label="SAM" value={formatUsdM(pool.samUsdM)} />
+              <SummaryCell label="SOM" value={formatUsdM(pool.somUsdM)} />
+            </div>
+            <div className="mini-facts">
+              <span>增长 {formatTrend(pool.growthRate)}</span>
+              <span>毛利 {formatPercent(pool.averageMarginRate)}</span>
+              <span>口碑 {pool.averageSentiment}</span>
+              <span>竞品 {formatPercent(pool.competitiveIntensity)}</span>
             </div>
           </article>
         ))}
@@ -662,27 +723,29 @@ function PlatformCoverage({ snapshot }) {
   );
 }
 
-function TopProducts({ products, selectedProductId, onSelect }) {
+function SkuScreening({ products, selectedProductId, onSelect }) {
   return (
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <h2>爆品分组 Top10</h2>
-          <p>按销量、搜索、成单率、客单价和趋势动量综合评分。</p>
+          <h2>SKU筛选清单</h2>
+          <p>competitor-analysis和pricing-strategy结合90天趋势，给出watch、test、scale或修毛利阶段。</p>
         </div>
       </div>
       {products.length === 0 ? (
-        <div className="empty-state">没有符合筛选条件的商品。</div>
+        <div className="empty-state">没有符合筛选条件的SKU。</div>
       ) : (
-        <div className="product-table" role="table" aria-label="爆品排名">
+        <div className="product-table" role="table" aria-label="SKU筛选">
           <div className="product-table-head" role="row">
             <span>排名</span>
-            <span>商品</span>
-            <span>评分</span>
-            <span>90天销量</span>
-            <span>搜索增速</span>
+            <span>SKU</span>
+            <span>阶段</span>
+            <span>机会分</span>
+            <span>毛利</span>
+            <span>口碑</span>
+            <span>搜索</span>
           </div>
-          {products.map((product) => (
+          {products.slice(0, 16).map((product) => (
             <button
               className={`product-row ${selectedProductId === product.id ? "active" : ""}`}
               key={product.id}
@@ -692,15 +755,13 @@ function TopProducts({ products, selectedProductId, onSelect }) {
               <span className="rank-mark">{product.rank}</span>
               <span>
                 <strong>{product.title}</strong>
-                <small>
-                  {product.regionName} / {product.platformName} / {product.priceTierLabel}
-                </small>
+                <small>{product.regionName} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}</small>
               </span>
-              <span className="score-value">{product.score}</span>
-              <span>{formatNumber(product.summary.sales90d)}</span>
-              <span className={product.summary.searchChange >= 0 ? "trend-up" : "trend-down"}>
-                {formatTrend(product.summary.searchChange)}
-              </span>
+              <span className={`stage-pill ${product.stage}`}>{stageLabel(product.stage)}</span>
+              <span className="score-value">{product.opportunityScore}</span>
+              <span>{formatPercent(product.pricing.grossMarginRate)}</span>
+              <span>{product.sentiment.score}</span>
+              <span className={product.summary.searchChange >= 0 ? "trend-up" : "trend-down"}>{formatTrend(product.summary.searchChange)}</span>
             </button>
           ))}
         </div>
@@ -719,22 +780,25 @@ function ProductDetail({ product }) {
   if (!product) {
     return (
       <section className="panel large-panel">
-        <div className="empty-state">选择一个商品查看90天趋势。</div>
+        <div className="empty-state">选择一个SKU查看90天趋势。</div>
       </section>
     );
   }
 
   const metricOptions = [
-    { id: "salesUnits", label: "销量", color: "#186b63" },
-    { id: "searchVolume", label: "搜索", color: "#2f5f9f" },
-    { id: "conversionRate", label: "成单率", color: "#8a5a18" },
-    { id: "averageOrderValue", label: "客单价", color: "#7c4d63" }
+    { id: "salesUnits", label: "销量", color: "#0f766e" },
+    { id: "searchVolume", label: "搜索", color: "#2563eb" },
+    { id: "conversionRate", label: "成单率", color: "#b45309" },
+    { id: "averageOrderValue", label: "客单价", color: "#be185d" }
   ];
   const activeMetric = metricOptions.find((option) => option.id === metric);
-
   const chartRows = product.trend.map((point) => ({
     ...point,
     conversionRate: point.conversionRate * 100
+  }));
+  const cohortRows = product.summary.cohorts.map((cohort) => ({
+    ...cohort,
+    conversionRate: roundForChart(cohort.conversionRate * 100)
   }));
 
   return (
@@ -742,82 +806,81 @@ function ProductDetail({ product }) {
       <div className="panel-heading">
         <div>
           <h2>{product.title}</h2>
-          <p>
-            {product.regionName} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}
-          </p>
+          <p>{product.regionName} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}</p>
         </div>
-        <strong className="detail-score">{product.score}</strong>
+        <strong className="detail-score">{product.opportunityScore}</strong>
       </div>
 
       <div className="summary-grid">
         <SummaryCell label="90天销量" value={formatNumber(product.summary.sales90d)} trend={formatTrend(product.summary.salesChange)} />
         <SummaryCell label="90天搜索" value={formatNumber(product.summary.search90d)} trend={formatTrend(product.summary.searchChange)} />
-        <SummaryCell
-          label="当前成单率"
-          value={formatPercent(product.summary.conversionRate)}
-          trend={`${product.summary.conversionChange > 0 ? "+" : ""}${product.summary.conversionChange.toFixed(2)}pp`}
-        />
-        <SummaryCell
-          label="当前客单价"
-          value={`$${product.summary.averageOrderValue.toFixed(2)}`}
-          trend={formatTrend(product.summary.aovChange)}
-        />
+        <SummaryCell label="当前成单率" value={formatPercent(product.summary.conversionRate)} trend={`${product.summary.conversionChange > 0 ? "+" : ""}${product.summary.conversionChange.toFixed(2)}pp`} />
+        <SummaryCell label="客单价" value={`$${product.summary.averageOrderValue.toFixed(2)}`} trend={formatTrend(product.summary.aovChange)} />
       </div>
 
       <div className="metric-tabs" role="tablist" aria-label="趋势指标">
         {metricOptions.map((option) => (
-          <button
-            className={metric === option.id ? "active" : ""}
-            key={option.id}
-            onClick={() => setMetric(option.id)}
-            type="button"
-          >
+          <button className={metric === option.id ? "active" : ""} key={option.id} onClick={() => setMetric(option.id)} type="button">
             {option.label}
           </button>
         ))}
       </div>
 
       <div className="chart-frame">
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={260}>
           <AreaChart data={chartRows} margin={{ top: 8, right: 18, left: 4, bottom: 0 }}>
             <defs>
               <linearGradient id="metricFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={activeMetric.color} stopOpacity={0.22} />
-                <stop offset="95%" stopColor={activeMetric.color} stopOpacity={0.02} />
+                <stop offset="5%" stopColor={activeMetric.color} stopOpacity={0.24} />
+                <stop offset="95%" stopColor={activeMetric.color} stopOpacity={0.03} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(43, 54, 58, 0.11)" />
             <XAxis dataKey="date" minTickGap={28} tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} width={46} />
             <Tooltip content={<TrendTooltip metric={metric} />} />
-            <Area
-              type="monotone"
-              dataKey={metric}
-              stroke={activeMetric.color}
-              strokeWidth={2}
-              fill="url(#metricFill)"
-              dot={false}
-              activeDot={{ r: 4 }}
-            />
+            <Area type="monotone" dataKey={metric} stroke={activeMetric.color} strokeWidth={2} fill="url(#metricFill)" dot={false} activeDot={{ r: 4 }} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="logic-note">
-        <BookOpenText size={19} weight="duotone" />
-        <span>{product.selectionLogic}</span>
+      <div className="cohort-grid">
+        <div>
+          <h3>cohort趋势验证</h3>
+          <p>{product.cohort.anomaly}。{product.cohort.validationAction}</p>
+          <div className="mini-facts">
+            <span>销量提升 {formatTrend(product.cohort.salesLift)}</span>
+            <span>搜索提升 {formatTrend(product.cohort.searchLift)}</span>
+            <span>留存代理 {formatPercent(product.cohort.retentionProxy)}</span>
+          </div>
+        </div>
+        <div className="mini-chart">
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={cohortRows}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(43, 54, 58, 0.1)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} width={34} />
+              <Tooltip />
+              <Bar dataKey="conversionRate" radius={[5, 5, 0, 0]} fill="#0f766e" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </section>
   );
 }
 
+function roundForChart(value) {
+  return Math.round(value * 100) / 100;
+}
+
 function SummaryCell({ label, value, trend }) {
-  const positive = trend.trim().startsWith("+");
+  const positive = trend ? trend.trim().startsWith("+") : true;
   return (
     <div className="summary-cell">
       <span>{label}</span>
       <strong>{value}</strong>
-      <small className={positive ? "trend-up" : "trend-down"}>{trend}</small>
+      {trend ? <small className={positive ? "trend-up" : "trend-down"}>{trend}</small> : null}
     </div>
   );
 }
@@ -834,13 +897,131 @@ function TrendTooltip({ active, payload, label, metric }) {
   );
 }
 
+function FourPWorkbench({ product, strategyCanvas, gtmPlaybook }) {
+  if (!product) {
+    return (
+      <section className="panel large-panel">
+        <div className="empty-state">选择一个SKU查看4P动作。</div>
+      </section>
+    );
+  }
+
+  const cards = [
+    { key: "product", title: "Product", icon: Package, items: product.product4p.product },
+    { key: "price", title: "Price", icon: Tag, items: product.product4p.price },
+    { key: "place", title: "Place", icon: ShoppingCart, items: product.product4p.place },
+    { key: "promotion", title: "Promotion", icon: ChartLineUp, items: product.product4p.promotion }
+  ];
+
+  return (
+    <section className="panel large-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>4P执行工作台</h2>
+          <p>把产品、本土化合规、全成本定价、渠道履约和促销动作落到当前SKU。</p>
+        </div>
+      </div>
+      <div className="fourp-grid">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <article key={card.key}>
+              <div>
+                <Icon size={20} weight="duotone" />
+                <strong>{card.title}</strong>
+              </div>
+              <ul>
+                {card.items.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </article>
+          );
+        })}
+      </div>
+      <div className="split-notes">
+        <article>
+          <h3>策略画布</h3>
+          <p>{strategyCanvas?.vision}</p>
+          <div className="tag-row">
+            {strategyCanvas?.sections?.slice(0, 5).map((section) => <span key={section.key}>{section.title}</span>)}
+          </div>
+        </article>
+        <article>
+          <h3>GTM定位</h3>
+          <p>{gtmPlaybook?.positioning}</p>
+          <div className="tag-row">
+            {gtmPlaybook?.kpis?.slice(0, 4).map((kpi) => <span key={kpi}>{kpi}</span>)}
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function MarketSegments({ snapshot }) {
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>市场细分</h2>
+          <p>按JTBD、痛点、期望收益和产品适配度拆分，不用单一人口属性判断机会。</p>
+        </div>
+      </div>
+      <div className="segment-list">
+        {(snapshot.marketSegments || []).map((segment) => (
+          <article key={segment.id}>
+            <div>
+              <strong>{segment.name}</strong>
+              <span>{segment.shareEstimate}</span>
+            </div>
+            <p>{segment.jtbd}</p>
+            <small>{segment.fit}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PlatformCoverage({ snapshot }) {
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>平台覆盖</h2>
+          <p>每个区域Top5平台加Amazon基准源，份额口径和可接入方式保留在来源说明中。</p>
+        </div>
+      </div>
+      <div className="region-list">
+        {snapshot.regions.map((region) => (
+          <article className="region-block" key={region.id}>
+            <div className="region-heading">
+              <strong>{region.name}</strong>
+              <span>{region.basis}</span>
+            </div>
+            <div className="platform-list">
+              {region.platforms.map((platform) => (
+                <div className="platform-row" key={platform.id}>
+                  <span className="rank-mark">{platform.rank}</span>
+                  <span className="platform-name">{platform.name}</span>
+                  <span className="platform-share">{platform.marketSharePercent ? `${platform.marketSharePercent}%` : `权重 ${platform.platformWeight}`}</span>
+                  <span className={`confidence ${platform.confidence}`}>{platform.confidence}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WikiPanel({ snapshot }) {
   return (
     <section className="panel wiki-panel">
       <div className="panel-heading">
         <div>
-          <h2>选品 Wiki</h2>
-          <p>把爆品逻辑沉淀为可复用判断规则。</p>
+          <h2>选品Wiki沉淀</h2>
+          <p>product-strategy和gtm-strategy输出，按品类沉淀爆品逻辑和4P复用规则。</p>
         </div>
       </div>
       <div className="wiki-list">
@@ -851,9 +1032,39 @@ function WikiPanel({ snapshot }) {
               <span>均分 {signal.averageScore}</span>
             </div>
             <p>{signal.observedPattern}</p>
-            <small>
-              价格带：{signal.winningPriceTiers.join("、")} / 平台：{signal.leadingPlatforms.join("、")}
-            </small>
+            <small>价格带：{signal.winningPriceTiers.join("、")} / 平台：{signal.leadingPlatforms.join("、")}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GtmPanel({ gtmPlaybook }) {
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>90天GTM路线</h2>
+          <p>渠道、信息、KPI和风险缓解直接服务SKU验证与放量。</p>
+        </div>
+      </div>
+      <div className="gtm-roadmap">
+        {gtmPlaybook?.roadmap90Days?.map((item) => (
+          <article key={item.phase}>
+            <strong>{item.phase}</strong>
+            <p>{item.focus}</p>
+            <span>{item.output}</span>
+          </article>
+        ))}
+      </div>
+      <div className="channel-grid">
+        {gtmPlaybook?.channels?.slice(0, 5).map((channel, index) => (
+          <article key={channel.name}>
+            <span>{index + 1}</span>
+            <strong>{channel.name}</strong>
+            <p>{channel.fit}</p>
+            <small>{channel.kpi}</small>
           </article>
         ))}
       </div>
@@ -882,32 +1093,30 @@ function SourcePanel({ snapshot }) {
   );
 }
 
-function SecurityPanel() {
+function SecurityPanel({ snapshot }) {
+  const rows = [
+    "后端绑定127.0.0.1，通过HTTPS tunnel转发。",
+    "GitHub Pages只发布前端和config.json，不发布快照、密钥或账号密码。",
+    "所有数据API请求必须带登录会话。",
+    "默认刷新不调用模型，只在refresh:ai时读取后端OPENAI_API_KEY。",
+    `当前数据模式：${snapshot.dataMode}。生产接入授权API、卖家后台导出或数据商。`
+  ];
+
   return (
     <section className="panel security-panel">
       <div className="panel-heading">
         <div>
           <h2>安全部署</h2>
-          <p>前端公开，后端绑定本机地址，模型和平台密钥只留在后端。</p>
+          <p>前端公开，后端本机运行，模型和平台密钥只留在后端环境变量。</p>
         </div>
       </div>
       <div className="security-list">
-        <div>
-          <ShieldCheck size={20} weight="duotone" />
-          <span>后端绑定 127.0.0.1，通过 HTTPS tunnel 转发。</span>
-        </div>
-        <div>
-          <ShieldCheck size={20} weight="duotone" />
-          <span>所有数据 API 请求必须带登录会话。</span>
-        </div>
-        <div>
-          <ShieldCheck size={20} weight="duotone" />
-          <span>CORS 只允许 GitHub Pages 和本地开发源。</span>
-        </div>
-        <div>
-          <ShieldCheck size={20} weight="duotone" />
-          <span>模型只在手动运行 refresh:ai 时调用。</span>
-        </div>
+        {rows.map((row) => (
+          <div key={row}>
+            <ShieldCheck size={20} weight="duotone" />
+            <span>{row}</span>
+          </div>
+        ))}
       </div>
     </section>
   );

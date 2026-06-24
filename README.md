@@ -4,8 +4,10 @@
 
 - 前端：Vite + React 静态看板，可发布到 GitHub Pages。
 - 后端：本机 Node API，只监听 `127.0.0.1`，用监控面板账号密码登录保护。
-- 数据：按区域、平台、价格带生成可替换的数据快照，保留 90 天趋势。快照只保存在本机 `data/`，不发布到 GitHub Pages。
-- 更新：`npm run refresh` 可手动刷新，`npm run scheduler` 每 12 小时刷新一次。
+- 数据：按区域、平台、价格带生成可替换的数据快照，保留 90 天趋势，并输出 PM 组合工作流结果。快照只保存在本机 `data/`，不发布到 GitHub Pages。
+- 工作流：`metrics-dashboard` 定义指标和告警，`market-segments` + `market-sizing` 做机会池，`competitor-analysis` + `pricing-strategy` 做 SKU 筛选，`cohort-analysis` + `sentiment-analysis` 验证趋势和口碑，`product-strategy` + `gtm-strategy` 沉淀选品 wiki。
+- 4P：每个重点 SKU 都落到 Product、Price、Place、Promotion 的执行动作。
+- 更新：`npm run refresh` 可手动刷新，`npm run scheduler` 默认每 6 小时刷新一次，可用 `REFRESH_CADENCE_HOURS` 调整。
 - 模型调用：默认不调用模型。只有运行 `npm run refresh:ai` 且设置 `OPENAI_API_KEY` 与 `OPENAI_MODEL` 时，才会用模型生成 wiki 分析。
 
 ## 快速开始

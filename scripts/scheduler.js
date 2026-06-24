@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const cadenceMs = 12 * 60 * 60 * 1000;
+const cadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 6);
+const cadenceMs = cadenceHours * 60 * 60 * 1000;
 
 function runRefresh() {
   const startedAt = new Date().toISOString();
@@ -30,4 +31,4 @@ function runRefresh() {
 runRefresh();
 setInterval(runRefresh, cadenceMs);
 
-console.log("Scheduler is running. Cadence: 12 hours.");
+console.log(`Scheduler is running. Cadence: ${cadenceHours} hours.`);
