@@ -10,5 +10,6 @@ data/latest-snapshot.json
 data/connectors.json
 data/audit.log
 data/refresh.log
+data/server.log
 data/vendor-exports/
 public/latest-snapshot.json
