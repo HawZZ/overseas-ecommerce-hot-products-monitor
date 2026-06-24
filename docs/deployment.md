@@ -29,7 +29,7 @@ API_PORT=8787
 DASHBOARD_USERNAME=你的登录账号
 DASHBOARD_PASSWORD=换成强密码
 SESSION_SECRET=换成另一段长随机字符串
-REFRESH_CADENCE_HOURS=6
+REFRESH_CADENCE_HOURS=12
 CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,https://YOUR_GITHUB_USERNAME.github.io
 ```
 
@@ -40,7 +40,7 @@ npm run refresh
 npm run server
 ```
 
-4. 按环境变量频率更新，默认每 6 小时：
+4. 按环境变量频率更新，默认每 12 小时：
 
 ```bash
 npm run scheduler
@@ -49,7 +49,7 @@ npm run scheduler
 也可以使用系统级定时任务：
 
 ```bash
-0 */6 * * * cd /home/ec2-user/overseas-ecommerce-hot-products-monitor && /usr/bin/npm run refresh >> data/refresh.log 2>&1
+0 */12 * * * cd /home/ec2-user/overseas-ecommerce-hot-products-monitor && /usr/bin/npm run refresh >> data/refresh.log 2>&1
 ```
 
 ## GitHub Pages 前端与 tunnel
@@ -57,15 +57,17 @@ npm run scheduler
 1. 创建 GitHub 仓库并推送代码。
 2. 在仓库 Settings -> Pages 中选择 GitHub Actions。
 3. `.github/workflows/pages.yml` 会在 `main` 分支 push 后构建 `dist/` 并发布。
-4. 后端 tunnel URL 写在 `public/config.json`。这个 URL 不是密钥，Pages 会把它发布为 `/config.json`。
+4. 默认 `public/config.json` 指向 `http://127.0.0.1:8787`。需要外网访问时，推荐在 GitHub 仓库 Secrets 中设置 `VITE_DEFAULT_API_BASE=https://你的受控后端入口`，GitHub Pages 构建会把它作为前端默认 API 地址。这个 URL 不是密钥，但应使用稳定、受控的 HTTPS tunnel 或域名。
 5. tunnel URL 变化后运行：
 
 ```bash
 scripts/sync-pages-tunnel-url.sh
 ```
 
-脚本会从 `overseas-ecommerce-monitor-tunnel.service` 日志中读取当前 `trycloudflare.com` URL，校验 `/health`，更新 `public/config.json`，提交并推送。
+脚本会从 `overseas-ecommerce-monitor-tunnel.service` 日志中读取当前 `trycloudflare.com` URL，校验 `/health`，更新 `public/config.json`，提交并推送。更推荐使用 `VITE_DEFAULT_API_BASE` secret，而不是把 quick tunnel URL 长期写入仓库。
 6. 打开 Pages URL，使用监控面板账号密码登录。
+
+Cloudflare quick tunnel 适合临时演示，不适合作为长期生产入口。长期外部访问建议使用固定域名的 Cloudflare Tunnel、Tailscale Funnel、WireGuard、SSH tunnel 或反向代理，并把 `CORS_ORIGINS` 限制到你的 GitHub Pages 域名。
 
 ## 安全要点
 
@@ -74,6 +76,7 @@ scripts/sync-pages-tunnel-url.sh
 - `CORS_ORIGINS` 只允许你的 GitHub Pages 域名和本地开发域名。
 - `public/config.json` 只包含后端 tunnel URL，不包含账号、密码、API key 或平台 token。
 - `.env`、平台密钥、OpenAI 密钥、Token、账号密码和真实快照不提交到仓库。
+- `data/connectors.json`、`data/vendor-exports/`、`data/audit.log` 已在 `.gitignore` 中，真实连接器配置和导出文件只保存在本机。
 - 如果不使用 Cloudflare quick tunnel，也可以换成 Tailscale Funnel、WireGuard 或 SSH tunnel，不要直接暴露端口。
 
 ## 模型调用策略

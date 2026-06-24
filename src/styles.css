@@ -37,6 +37,7 @@ body {
     linear-gradient(180deg, rgba(15, 118, 110, 0.04), transparent 240px),
     var(--surface);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 button,
@@ -426,6 +427,59 @@ select:focus {
   gap: 12px;
 }
 
+.data-quality {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.9fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+}
+
+.data-quality.synthetic {
+  border-color: rgba(180, 83, 9, 0.32);
+  background: linear-gradient(90deg, var(--warning-weak), var(--surface-strong) 46%);
+}
+
+.data-quality.mixed {
+  border-color: rgba(15, 118, 110, 0.32);
+  background: linear-gradient(90deg, var(--accent-weak), var(--surface-strong) 46%);
+}
+
+.data-quality strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.data-quality p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.48;
+}
+
+.quality-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quality-facts span {
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  padding: 8px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 760;
+  text-align: center;
+}
+
 .workflow-rail article {
   display: grid;
   gap: 7px;
@@ -600,6 +654,87 @@ select:focus {
 .product-table {
   display: grid;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.rank-groups-panel {
+  overflow: hidden;
+}
+
+.compact-tabs {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+
+.rank-group-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rank-group-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.rank-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rank-group-head svg {
+  color: var(--accent);
+}
+
+.rank-group-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.rank-mini-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rank-mini-list div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.rank-mini-list strong,
+.rank-mini-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-mini-list strong {
+  font-size: 12px;
+}
+
+.rank-mini-list small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.rank-mini-list em {
+  color: var(--accent);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .product-table-head,
@@ -715,6 +850,23 @@ select:focus {
 
 .large-panel {
   min-height: 610px;
+}
+
+.lineage-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: -4px 0 14px;
+}
+
+.lineage-strip span {
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 720;
 }
 
 .metric-tabs {
@@ -897,7 +1049,7 @@ select:focus {
 
 .platform-row {
   display: grid;
-  grid-template-columns: 26px 1fr auto auto;
+  grid-template-columns: 26px minmax(110px, 1fr) auto auto;
   align-items: center;
   gap: 9px;
   font-size: 12px;
@@ -910,6 +1062,12 @@ select:focus {
 .platform-share {
   color: var(--muted-strong);
   font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.platform-row small {
+  grid-column: 2 / -1;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .confidence {
@@ -1111,7 +1269,8 @@ select:focus {
 
 @media (max-width: 1280px) {
   .workflow-rail,
-  .channel-grid {
+  .channel-grid,
+  .rank-group-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -1152,12 +1311,21 @@ select:focus {
 
   .workflow-rail,
   .channel-grid,
+  .rank-group-grid,
   .summary-grid,
   .cohort-grid,
   .split-notes,
   .fourp-grid,
   .sizing-grid {
     grid-template-columns: 1fr;
+  }
+
+  .data-quality {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .alert-row {
@@ -1170,11 +1338,12 @@ select:focus {
 
   .product-table {
     overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
 
   .product-table-head,
   .product-row {
-    min-width: 860px;
+    width: 860px;
   }
 }
 
@@ -1192,7 +1361,8 @@ select:focus {
 
   .metric-strip,
   .api-grid,
-  .filter-grid {
+  .filter-grid,
+  .quality-facts {
     grid-template-columns: 1fr;
   }
 

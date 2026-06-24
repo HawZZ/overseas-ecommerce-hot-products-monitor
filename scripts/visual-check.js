@@ -5,6 +5,7 @@ import path from "node:path";
 const reportsDir = path.resolve("reports");
 const visualUsername = process.env.DASHBOARD_USERNAME;
 const visualPassword = process.env.DASHBOARD_PASSWORD;
+const baseUrl = process.env.VISUAL_BASE_URL || "http://127.0.0.1:5173/";
 const viewports = [
   { name: "desktop", width: 1440, height: 980 },
   { name: "mobile", width: 390, height: 844 }
@@ -33,7 +34,7 @@ for (const viewport of viewports) {
     if (message.type() === "error") errors.push(message.text());
   });
 
-  await page.goto("http://127.0.0.1:5173/", { waitUntil: "networkidle" });
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.locator("input[autocomplete='username']").fill(visualUsername);
   await page.locator("input[autocomplete='current-password']").fill(visualPassword);
   await page.getByRole("button", { name: "登录" }).click();
@@ -43,7 +44,14 @@ for (const viewport of viewports) {
   const title = await page.locator(".brand-line").innerText();
   const productRows = await page.locator(".product-row").count();
   const svgCount = await page.locator(".chart-frame svg").count();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+  const overflow = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    return [...document.querySelectorAll("body *")].some((element) => {
+      if (element.closest(".product-table")) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.right > viewportWidth + 2 || rect.left < -2;
+    });
+  });
   const screenshot = path.join(reportsDir, `${viewport.name}.png`);
   await page.screenshot({ path: screenshot, fullPage: false });
   await page.close();

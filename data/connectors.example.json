@@ -2,12 +2,12 @@
   "amazon-global": {
     "enabled": false,
     "type": "amazon-sp-api",
-    "notes": "Fill this in on the local backend only. Do not commit real credentials."
+    "notes": "Fill this in on the local backend only. Do not commit real credentials. The current public repo reports this connector status but does not ship Amazon credentials or production SP-API polling."
   },
   "vendor-report-upload": {
     "enabled": true,
     "type": "csv-folder",
     "path": "./data/vendor-exports",
-    "notes": "Drop marketplace or third-party data vendor exports here. The current script can be extended to parse them before synthetic fallback runs."
+    "notes": "Drop authorized marketplace or third-party data vendor CSV/JSON exports here. The refresh script reads these files first, then uses synthetic fallback for missing combinations."
   }
 }

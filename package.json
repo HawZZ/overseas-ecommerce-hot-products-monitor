@@ -10,10 +10,12 @@
     "server": "node server/index.js",
     "refresh": "node scripts/update-data.js",
     "refresh:ai": "node scripts/update-data.js --with-ai-wiki",
+    "verify:snapshot": "node scripts/verify-snapshot.js",
+    "smoke:api": "node scripts/smoke-api.js",
     "scheduler": "node scripts/scheduler.js",
     "check:visual": "node scripts/visual-check.js",
     "lint": "eslint .",
-    "check": "npm run lint && npm run build"
+    "check": "npm run lint && npm run refresh && npm run verify:snapshot && npm run smoke:api && npm run build"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const cadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 6);
+const cadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 12);
 const cadenceMs = cadenceHours * 60 * 60 * 1000;
 
 function runRefresh() {

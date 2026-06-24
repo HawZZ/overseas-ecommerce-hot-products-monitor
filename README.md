@@ -4,10 +4,10 @@
 
 - 前端：Vite + React 静态看板，可发布到 GitHub Pages。
 - 后端：本机 Node API，只监听 `127.0.0.1`，用监控面板账号密码登录保护。
-- 数据：按区域、平台、价格带生成可替换的数据快照，保留 90 天趋势，并输出 PM 组合工作流结果。快照只保存在本机 `data/`，不发布到 GitHub Pages。
+- 数据：优先读取本机授权导出和连接器配置，缺失时使用监控种子生成可替换快照；每个 SKU 保留 90 天销量、搜索、成单率和客单价趋势。快照只保存在本机 `data/`，不发布到 GitHub Pages。
 - 工作流：`metrics-dashboard` 定义指标和告警，`market-segments` + `market-sizing` 做机会池，`competitor-analysis` + `pricing-strategy` 做 SKU 筛选，`cohort-analysis` + `sentiment-analysis` 验证趋势和口碑，`product-strategy` + `gtm-strategy` 沉淀选品 wiki。
 - 4P：每个重点 SKU 都落到 Product、Price、Place、Promotion 的执行动作。
-- 更新：`npm run refresh` 可手动刷新，`npm run scheduler` 默认每 6 小时刷新一次，可用 `REFRESH_CADENCE_HOURS` 调整。
+- 更新：`npm run refresh` 可手动刷新，`npm run scheduler` 默认每 12 小时刷新一次，可用 `REFRESH_CADENCE_HOURS` 调整。
 - 模型调用：默认不调用模型。只有运行 `npm run refresh:ai` 且设置 `OPENAI_API_KEY` 与 `OPENAI_MODEL` 时，才会用模型生成 wiki 分析。
 
 ## 快速开始
@@ -38,4 +38,13 @@ npm run dev
 
 ## 数据边界
 
-当前仓库内置平台覆盖种子与公开来源说明。真实生产数据需要接入平台 API、第三方数据商或合规采集器。不要在 GitHub Pages、前端代码或公开仓库提交平台密钥、OpenAI 密钥、后端 Token、账号密码或真实快照。
+当前仓库内置平台覆盖种子与公开来源说明。东南亚和北美部分平台有可比份额公开口径；西欧和非洲更多是公开排名、GMV片段或平台覆盖优先级，因此看板会区分“份额”和“覆盖权重”。真实生产数据需要接入平台 API、卖家后台导出、第三方数据商或合规采集器。
+
+本机导入路径：
+
+1. 复制 `data/connectors.example.json` 为 `data/connectors.json`。
+2. 把授权导出的 CSV 或 JSON 放入 `data/vendor-exports/`。
+3. CSV 建议包含 `date,regionId,platformId,categoryId,priceTierId,title,salesUnits,searchVolume,conversionRate,averageOrderValue,sentiment,reviewVolume`。
+4. 运行 `npm run refresh`，看板会从 `dataQuality` 和 SKU `dataLineage` 显示哪些数据来自本机导入。
+
+不要在 GitHub Pages、前端代码或公开仓库提交平台密钥、OpenAI 密钥、后端 Token、账号密码、真实快照、真实连接器配置或本机导出文件。

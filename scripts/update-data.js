@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const dataDir = path.resolve(rootDir, process.env.DATA_DIR || "data");
-const refreshCadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 6);
+const refreshCadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 12);
 
 const priceTiers = [
   { id: "0-5", label: "0-5美元", min: 0, max: 5 },
@@ -263,6 +263,161 @@ function isoDateDaysAgo(daysAgo) {
 async function readJson(filePath) {
   const text = await fs.readFile(filePath, "utf8");
   return JSON.parse(text);
+}
+
+async function readJsonIfExists(filePath, fallback = null) {
+  try {
+    return await readJson(filePath);
+  } catch (error) {
+    if (error.code === "ENOENT") return fallback;
+    throw error;
+  }
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseCsvLine(line) {
+  const values = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      values.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  values.push(current.trim());
+  return values;
+}
+
+function parseCsv(text) {
+  const lines = text.split(/\r?\n/u).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim());
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
+  });
+}
+
+function readField(row, names) {
+  const entries = Object.entries(row);
+  for (const name of names) {
+    const match = entries.find(([key]) => key.toLowerCase() === name.toLowerCase());
+    if (match && match[1] !== "") return match[1];
+  }
+  return "";
+}
+
+function toNumber(value) {
+  const numeric = Number(String(value ?? "").replace(/[$,%\s,]/gu, ""));
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function inferTierId(price) {
+  const tier = priceTiers.find((entry) => price >= entry.min && price <= entry.max);
+  return tier?.id || null;
+}
+
+function normalizeVendorRow(row, sourceName) {
+  const price = toNumber(readField(row, ["price", "averageOrderValue", "aov", "客单价", "售价"]));
+  return {
+    sourceName,
+    title: readField(row, ["title", "sku", "product", "商品", "产品"]) || "未命名导入SKU",
+    regionId: readField(row, ["regionId", "region", "区域"]),
+    platformId: readField(row, ["platformId", "platform", "平台"]),
+    categoryId: readField(row, ["categoryId", "category", "品类"]),
+    priceTierId: readField(row, ["priceTierId", "tier", "价格带"]) || inferTierId(price),
+    date: readField(row, ["date", "日期"]),
+    salesUnits: toNumber(readField(row, ["salesUnits", "sales", "units", "销量"])),
+    searchVolume: toNumber(readField(row, ["searchVolume", "searches", "search", "搜索量"])),
+    conversionRate: toNumber(readField(row, ["conversionRate", "conversion", "cvr", "成单率"])),
+    averageOrderValue: price,
+    reviewSentiment: toNumber(readField(row, ["sentiment", "reviewSentiment", "口碑分"])),
+    reviewVolume: toNumber(readField(row, ["reviewVolume", "reviews", "评论数"]))
+  };
+}
+
+async function loadVendorExports(connectors) {
+  const csvConnector = Object.values(connectors || {}).find((connector) => connector.enabled && connector.type === "csv-folder");
+  if (!csvConnector?.path) {
+    return { rows: [], files: [] };
+  }
+
+  const folder = path.resolve(rootDir, csvConnector.path);
+  if (!(await fileExists(folder))) {
+    return { rows: [], files: [] };
+  }
+
+  const names = await fs.readdir(folder);
+  const files = names
+    .filter((name) => /\.(csv|json)$/iu.test(name))
+    .map((name) => path.resolve(folder, name));
+
+  const rows = [];
+  for (const file of files) {
+    const text = await fs.readFile(file, "utf8");
+    const parsed = file.endsWith(".json") ? JSON.parse(text) : parseCsv(text);
+    const arrayRows = Array.isArray(parsed) ? parsed : parsed.rows || parsed.data || [];
+    for (const row of arrayRows) {
+      rows.push(normalizeVendorRow(row, path.basename(file)));
+    }
+  }
+
+  return {
+    rows: rows.filter((row) => row.regionId && row.platformId && row.priceTierId),
+    files: files.map((file) => path.relative(rootDir, file))
+  };
+}
+
+function buildDataQuality({ connectors, vendorImport }) {
+  const connectorEntries = Object.entries(connectors || {}).map(([id, connector]) => ({
+    id,
+    type: connector.type || "unknown",
+    enabled: Boolean(connector.enabled),
+    status: connector.enabled
+      ? id === "vendor-report-upload"
+        ? vendorImport.rows.length > 0
+          ? "ready"
+          : "waiting-for-files"
+        : "configured"
+      : "disabled",
+    notes: connector.notes || ""
+  }));
+  const liveConnectorCount = connectorEntries.filter((connector) => connector.enabled && connector.status !== "waiting-for-files").length;
+  const vendorRowCount = vendorImport.rows.length;
+  const dataMode = vendorRowCount > 0 ? "mixed-local-import" : "synthetic-seed";
+
+  return {
+    dataMode,
+    rowCounts: {
+      vendorRows: vendorRowCount,
+      vendorFiles: vendorImport.files.length,
+      enabledConnectors: connectorEntries.filter((connector) => connector.enabled).length,
+      liveConnectors: liveConnectorCount
+    },
+    connectorStatus: connectorEntries,
+    importedFiles: vendorImport.files,
+    boundary: dataMode === "synthetic-seed"
+      ? "当前快照由监控种子和规则模型生成，用于工作流演示和结构验证。生产决策前必须接入授权平台API、卖家后台导出、广告/搜索/评论数据或第三方数据商。"
+      : "当前快照混合了本机授权导出和规则补全。SKU级决策应优先查看dataLineage中的imported字段。"
+  };
 }
 
 function chooseCategory(tierIndex, rank) {
@@ -538,6 +693,13 @@ function createProduct({ region, platform, tier, tierIndex, rankSeed }) {
     rankSeed,
     competitorIntensity: intensity,
     recommendation: cohort.validationAction,
+    sourceType: "synthetic",
+    dataLineage: {
+      mode: "synthetic-seed",
+      importedRows: 0,
+      sourceFiles: [],
+      caveat: "规则生成的演示数据，用于验证看板结构和工作流。"
+    },
     summary,
     pricing,
     sentiment,
@@ -546,6 +708,107 @@ function createProduct({ region, platform, tier, tierIndex, rankSeed }) {
     product4p,
     trend
   };
+}
+
+function resolveByIdOrName(entries, value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return entries.find((entry) => entry.id?.toLowerCase() === normalized || entry.name?.toLowerCase() === normalized);
+}
+
+function buildImportedTrend(rows, tier, fallbackPrice) {
+  const rowsByDate = new Map(rows.filter((row) => row.date).map((row) => [row.date, row]));
+  return Array.from({ length: 90 }, (_, index) => {
+    const date = isoDateDaysAgo(89 - index);
+    const row = rowsByDate.get(date);
+    return {
+      date,
+      salesUnits: Math.max(0, Math.round(row?.salesUnits || 0)),
+      searchVolume: Math.max(0, Math.round(row?.searchVolume || 0)),
+      conversionRate: row?.conversionRate ? round(row.conversionRate > 1 ? row.conversionRate / 100 : row.conversionRate, 4) : 0,
+      averageOrderValue: row?.averageOrderValue ? round(row.averageOrderValue, 2) : round(fallbackPrice || (tier.min + tier.max) / 2, 2)
+    };
+  });
+}
+
+function buildImportedProducts({ vendorRows, platformSources }) {
+  const groups = new Map();
+  for (const row of vendorRows) {
+    const region = resolveByIdOrName(platformSources.regions, row.regionId);
+    const platform = region ? resolveByIdOrName(region.platforms, row.platformId) : null;
+    const tier = priceTiers.find((entry) => entry.id === row.priceTierId || entry.label === row.priceTierId);
+    const category = resolveByIdOrName(categoryPool, row.categoryId) || categoryPool[0];
+    if (!region || !platform || !tier) continue;
+
+    const key = `${region.id}:${platform.id}:${tier.id}:${category.id}:${row.title}`;
+    if (!groups.has(key)) {
+      groups.set(key, { region, platform, tier, category, title: row.title, rows: [] });
+    }
+    groups.get(key).rows.push(row);
+  }
+
+  return [...groups.values()].map((group, index) => {
+    const rng = createRng(hashString(`imported:${group.region.id}:${group.platform.id}:${group.title}`));
+    const rows = group.rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const priceRows = rows.filter((row) => row.averageOrderValue > 0);
+    const fallbackPrice = priceRows.length
+      ? priceRows.reduce((sum, row) => sum + row.averageOrderValue, 0) / priceRows.length
+      : (group.tier.min + group.tier.max) / 2;
+    const trend = buildImportedTrend(rows, group.tier, fallbackPrice);
+    const summary = summarizeTrend(trend);
+    const pricing = estimatePricing({ price: summary.averageOrderValue || fallbackPrice, tier: group.tier, regionId: group.region.id, category: group.category, rng });
+    const sentiment = estimateSentiment({ category: group.category, summary, rng });
+    const importedSentiments = rows.filter((row) => row.reviewSentiment);
+    if (importedSentiments.length) {
+      sentiment.score = round(clamp(importedSentiments.reduce((sum, row) => sum + row.reviewSentiment, 0) / importedSentiments.length, -1, 1), 2);
+      sentiment.satisfactionLevel = sentiment.score >= 0.62 ? "强正向" : sentiment.score >= 0.38 ? "可验证" : sentiment.score >= 0.18 ? "分化" : "风险";
+    }
+    const importedReviewVolume = rows.reduce((sum, row) => sum + row.reviewVolume, 0);
+    if (importedReviewVolume > 0) sentiment.reviewVolume = Math.round(importedReviewVolume);
+
+    const cohort = estimateCohort(summary, sentiment, pricing);
+    const intensity = competitorIntensity({ platform: group.platform, category: group.category, rng });
+    const score = opportunityScore({ summary, pricing, sentiment, intensity, regionGrowth: regionSizing[group.region.id].growth });
+    const competitors = buildCompetitors({ category: group.category, platform: group.platform, intensity });
+    const product4p = build4p({ category: group.category, regionId: group.region.id, platform: group.platform, pricing, cohort, sentiment });
+    const confidence = round(clamp(0.58 + score / 260 + Math.min(rows.length, 30) / 120 - intensity * 0.06, 0.42, 0.96), 2);
+    const stage = score >= 78 && cohort.state === "scale" ? "scale" : score >= 70 ? "test" : cohort.state === "protect-margin" ? "fix-margin" : "watch";
+
+    return {
+      id: `imported-${hashString(`${group.region.id}:${group.platform.id}:${group.title}`).toString(16)}`,
+      title: group.title,
+      regionId: group.region.id,
+      regionName: group.region.name,
+      platformId: group.platform.id,
+      platformName: group.platform.name,
+      priceTierId: group.tier.id,
+      priceTierLabel: group.tier.label,
+      categoryId: group.category.id,
+      categoryName: group.category.name,
+      buyerSegmentId: group.category.segmentId,
+      selectionLogic: group.category.logic,
+      score,
+      opportunityScore: score,
+      confidence,
+      stage,
+      rankSeed: index + 1,
+      competitorIntensity: intensity,
+      recommendation: cohort.validationAction,
+      sourceType: "local-import",
+      dataLineage: {
+        mode: "mixed-local-import",
+        importedRows: rows.length,
+        sourceFiles: [...new Set(rows.map((row) => row.sourceName))],
+        caveat: "本机授权导入数据，缺失日期仍由结构化空值保留。"
+      },
+      summary,
+      pricing,
+      sentiment,
+      cohort,
+      competitors,
+      product4p,
+      trend
+    };
+  });
 }
 
 function buildOpportunityPools(products) {
@@ -626,6 +889,112 @@ function buildRegionalSummary(platformSources, products) {
       }))
     };
   });
+}
+
+function compactRankProduct(product, index) {
+  return {
+    rank: index + 1,
+    id: product.id,
+    title: product.title,
+    regionId: product.regionId,
+    regionName: product.regionName,
+    platformId: product.platformId,
+    platformName: product.platformName,
+    priceTierId: product.priceTierId,
+    priceTierLabel: product.priceTierLabel,
+    categoryId: product.categoryId,
+    categoryName: product.categoryName,
+    sourceType: product.sourceType,
+    opportunityScore: product.opportunityScore,
+    confidence: product.confidence,
+    stage: product.stage,
+    summary: product.summary,
+    pricing: {
+      targetPrice: product.pricing.targetPrice,
+      benchmarkMedianPrice: product.pricing.benchmarkMedianPrice,
+      landedCost: product.pricing.landedCost,
+      grossMarginRate: product.pricing.grossMarginRate,
+      priceGapPercent: product.pricing.priceGapPercent,
+      strategy: product.pricing.strategy
+    },
+    sentiment: product.sentiment,
+    cohort: product.cohort,
+    dataLineage: product.dataLineage,
+    trend: product.trend
+  };
+}
+
+function rankTop10(products, predicate, context) {
+  return {
+    ...context,
+    products: products
+      .filter(predicate)
+      .sort((a, b) => b.opportunityScore - a.opportunityScore)
+      .slice(0, 10)
+      .map(compactRankProduct)
+  };
+}
+
+function buildRankGroups(platformSources, products) {
+  const groups = [];
+
+  for (const tier of priceTiers) {
+    groups.push(rankTop10(products, (product) => product.priceTierId === tier.id, {
+      id: `price-tier:${tier.id}`,
+      type: "price-tier",
+      label: `${tier.label} 全区域Top10`,
+      priceTierId: tier.id,
+      priceTierLabel: tier.label
+    }));
+  }
+
+  for (const region of platformSources.regions) {
+    groups.push(rankTop10(products, (product) => product.regionId === region.id, {
+      id: `region:${region.id}`,
+      type: "region",
+      label: `${region.name} Top10`,
+      regionId: region.id,
+      regionName: region.name
+    }));
+
+    for (const platform of region.platforms) {
+      groups.push(rankTop10(products, (product) => product.regionId === region.id && product.platformId === platform.id, {
+        id: `region-platform:${region.id}:${platform.id}`,
+        type: "region-platform",
+        label: `${region.name} / ${platform.name} Top10`,
+        regionId: region.id,
+        regionName: region.name,
+        platformId: platform.id,
+        platformName: platform.name
+      }));
+
+      for (const tier of priceTiers) {
+        groups.push(rankTop10(products, (product) => product.regionId === region.id && product.platformId === platform.id && product.priceTierId === tier.id, {
+          id: `region-platform-price:${region.id}:${platform.id}:${tier.id}`,
+          type: "region-platform-price-tier",
+          label: `${region.name} / ${platform.name} / ${tier.label} Top10`,
+          regionId: region.id,
+          regionName: region.name,
+          platformId: platform.id,
+          platformName: platform.name,
+          priceTierId: tier.id,
+          priceTierLabel: tier.label
+        }));
+      }
+    }
+  }
+
+  for (const category of categoryPool) {
+    groups.push(rankTop10(products, (product) => product.categoryId === category.id, {
+      id: `category:${category.id}`,
+      type: "category",
+      label: `${category.name} Top10`,
+      categoryId: category.id,
+      categoryName: category.name
+    }));
+  }
+
+  return groups;
 }
 
 function buildWikiSignals(products) {
@@ -781,7 +1150,7 @@ function buildStrategyCanvas(metricsFramework) {
       { key: "tradeoffs", title: "取舍", body: "不把未授权爬虫、Cookie采集和不可解释的模型结论作为生产路径。", evidence: "默认脚本不调用模型，真实数据来自授权API、后台导出或数据商。" },
       { key: "metrics", title: "关键指标", body: `${metricsFramework.northStar.name}，季度OMTM为SKU验证通过率。`, evidence: "metrics-dashboard定义指标、阈值和复盘节奏。" },
       { key: "growth", title: "增长", body: "先用平台验证动销，再用独立站、邮件和内容沉淀复购与品牌资产。", evidence: "gtm-strategy把渠道、信息和90天路线图拆开。" },
-      { key: "capabilities", title: "能力", body: "需要稳定数据接入、类目研究、合规核验、供应链成本模型和内容投放反馈。", evidence: "每6小时刷新种子快照，可按需接入真实导出。" },
+      { key: "capabilities", title: "能力", body: "需要稳定数据接入、类目研究、合规核验、供应链成本模型和内容投放反馈。", evidence: `默认每${refreshCadenceHours}小时刷新快照，可按需接入真实导出。` },
       { key: "defensibility", title: "防御性", body: "长期优势来自区域和类目的历史样本、供应链成本校准、评论词库和复盘wiki。", evidence: "选品wiki每次刷新沉淀判断规则。" }
     ],
     hypotheses: [
@@ -837,7 +1206,10 @@ function buildWorkflowSteps() {
   ];
 }
 
-function generateSnapshot(platformSources) {
+async function generateSnapshot(platformSources) {
+  const connectors = await readJsonIfExists(path.resolve(dataDir, "connectors.json"), await readJsonIfExists(path.resolve(dataDir, "connectors.example.json"), {}));
+  const vendorImport = await loadVendorExports(connectors);
+  const dataQuality = buildDataQuality({ connectors, vendorImport });
   const products = [];
   for (const region of platformSources.regions) {
     for (const platform of region.platforms) {
@@ -848,6 +1220,7 @@ function generateSnapshot(platformSources) {
       });
     }
   }
+  products.push(...buildImportedProducts({ vendorRows: vendorImport.rows, platformSources }));
 
   const tierRanks = priceTiers.map((tier) => ({
     ...tier,
@@ -867,12 +1240,14 @@ function generateSnapshot(platformSources) {
   const wikiSignals = buildWikiSignals(products);
   const metricsFramework = buildMetricsFramework({ products, opportunityPools, skuShortlist, generatedAt });
   const alerts = buildAlerts({ products, metricsFramework });
+  const rankGroups = buildRankGroups(platformSources, products);
 
   return {
     generatedAt,
-    workflowVersion: "pm-4p-workflow-v1",
-    dataMode: "synthetic-seed",
-    dataModeNote: "当前快照由监控种子和规则模型生成，用于工作流演示和数据结构验证。生产环境应替换为授权平台API、卖家后台导出、第三方数据商或合规采集器。",
+    workflowVersion: "pm-4p-workflow-v2",
+    dataMode: dataQuality.dataMode,
+    dataModeNote: dataQuality.boundary,
+    dataQuality,
     refreshCadenceHours,
     priceTiers,
     regions: platformSources.regions,
@@ -884,6 +1259,7 @@ function generateSnapshot(platformSources) {
     marketSegments: buyerSegments,
     opportunityPools,
     tierRanks,
+    rankGroups,
     skuShortlist,
     metricsFramework,
     alerts,
@@ -1023,7 +1399,7 @@ async function main() {
   await fs.mkdir(path.resolve(rootDir, "docs"), { recursive: true });
 
   const platformSources = await readJson(path.resolve(dataDir, "platform-sources.json"));
-  const snapshot = generateSnapshot(platformSources);
+  const snapshot = await generateSnapshot(platformSources);
   const wiki = await maybeCreateAiWiki(snapshot);
 
   await fs.writeFile(path.resolve(dataDir, "latest-snapshot.json"), `${JSON.stringify(snapshot)}\n`);

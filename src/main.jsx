@@ -8,6 +8,7 @@ import {
   Database,
   Funnel,
   GlobeHemisphereEast,
+  ListChecks,
   LockKey,
   MagnifyingGlass,
   MapTrifold,
@@ -82,6 +83,9 @@ function formatConnectionError(error) {
 async function loadRuntimeConfig() {
   const inlineApiBase = normalizeApiUrl(window.MONITOR_CONFIG?.defaultApiBase);
   if (inlineApiBase) return inlineApiBase;
+
+  const buildApiBase = normalizeApiUrl(import.meta.env?.VITE_DEFAULT_API_BASE);
+  if (buildApiBase) return buildApiBase;
 
   try {
     const configUrl = new URL("config.json", window.location.href);
@@ -508,12 +512,15 @@ function App() {
         </section>
 
         <MetricsCommandCenter snapshot={snapshot} />
+        <DataQualityBanner snapshot={snapshot} />
         <WorkflowRail steps={snapshot.workflowSteps || []} />
 
         <section className="dashboard-grid">
           <OpportunityPools snapshot={snapshot} />
           <SkuScreening products={products} selectedProductId={selectedProduct?.id} onSelect={setSelectedProductId} />
         </section>
+
+        <RankGroupsPanel snapshot={snapshot} />
 
         <section className="detail-grid">
           <ProductDetail product={selectedProduct} />
@@ -668,6 +675,28 @@ function MetricsCommandCenter({ snapshot }) {
   );
 }
 
+function DataQualityBanner({ snapshot }) {
+  const quality = snapshot.dataQuality || {};
+  const modeLabel = snapshot.dataMode === "mixed-local-import" ? "本机导入 + 规则补全" : "监控种子演示";
+  const connectors = quality.connectorStatus || [];
+  const activeConnectors = connectors.filter((connector) => connector.enabled);
+
+  return (
+    <section className={`data-quality ${snapshot.dataMode === "mixed-local-import" ? "mixed" : "synthetic"}`} aria-label="数据可信度">
+      <div>
+        <strong>{modeLabel}</strong>
+        <p>{snapshot.dataModeNote}</p>
+      </div>
+      <div className="quality-facts">
+        <span>导入行 {quality.rowCounts?.vendorRows ?? 0}</span>
+        <span>导入文件 {quality.rowCounts?.vendorFiles ?? 0}</span>
+        <span>启用连接器 {activeConnectors.length}</span>
+        <span>默认 {snapshot.refreshCadenceHours}小时</span>
+      </div>
+    </section>
+  );
+}
+
 function WorkflowRail({ steps }) {
   return (
     <section className="workflow-rail" aria-label="PM组合工作流">
@@ -770,6 +799,54 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
   );
 }
 
+function RankGroupsPanel({ snapshot }) {
+  const [groupType, setGroupType] = useState("region-platform-price-tier");
+  const groups = useMemo(() => {
+    const rankGroups = snapshot.rankGroups || [];
+    return rankGroups.filter((group) => group.type === groupType && group.products?.length);
+  }, [snapshot.rankGroups, groupType]);
+  const selectedGroups = groups.slice(0, groupType === "region-platform-price-tier" ? 6 : 8);
+
+  return (
+    <section className="panel rank-groups-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>分组Top10榜单</h2>
+          <p>按价格带、区域、平台和品类持久化Top10，每个榜单商品都保留90天销量、搜索、成单率和客单价趋势。</p>
+        </div>
+        <div className="metric-tabs compact-tabs">
+          <button className={groupType === "region-platform-price-tier" ? "active" : ""} onClick={() => setGroupType("region-platform-price-tier")} type="button">区域/平台/价格带</button>
+          <button className={groupType === "price-tier" ? "active" : ""} onClick={() => setGroupType("price-tier")} type="button">价格带</button>
+          <button className={groupType === "region" ? "active" : ""} onClick={() => setGroupType("region")} type="button">区域</button>
+          <button className={groupType === "category" ? "active" : ""} onClick={() => setGroupType("category")} type="button">品类</button>
+        </div>
+      </div>
+      <div className="rank-group-grid">
+        {selectedGroups.map((group) => (
+          <article className="rank-group-card" key={group.id}>
+            <div className="rank-group-head">
+              <ListChecks size={18} weight="duotone" />
+              <strong>{group.label}</strong>
+            </div>
+            <div className="rank-mini-list">
+              {group.products.slice(0, 10).map((product) => (
+                <div key={product.id}>
+                  <span className="rank-mark">{product.rank}</span>
+                  <span>
+                    <strong>{product.title}</strong>
+                    <small>{product.categoryName} / {stageLabel(product.stage)} / {product.sourceType === "local-import" ? "导入" : "种子"}</small>
+                  </span>
+                  <em>{product.opportunityScore}</em>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ProductDetail({ product }) {
   const [metric, setMetric] = useState("salesUnits");
 
@@ -809,6 +886,13 @@ function ProductDetail({ product }) {
           <p>{product.regionName} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}</p>
         </div>
         <strong className="detail-score">{product.opportunityScore}</strong>
+      </div>
+
+      <div className="lineage-strip">
+        <span>{product.sourceType === "local-import" ? "本机导入数据" : "监控种子数据"}</span>
+        <span>导入行 {product.dataLineage?.importedRows ?? 0}</span>
+        <span>置信度 {formatPercent(product.confidence, 0)}</span>
+        <span>{product.dataLineage?.caveat}</span>
       </div>
 
       <div className="summary-grid">
@@ -988,7 +1072,7 @@ function PlatformCoverage({ snapshot }) {
       <div className="panel-heading">
         <div>
           <h2>平台覆盖</h2>
-          <p>每个区域Top5平台加Amazon基准源，份额口径和可接入方式保留在来源说明中。</p>
+          <p>每区保留5个平台作为监控覆盖优先级；只有来源给出可比份额时展示市占率，其他区域展示覆盖权重和置信度。</p>
         </div>
       </div>
       <div className="region-list">
@@ -1003,8 +1087,9 @@ function PlatformCoverage({ snapshot }) {
                 <div className="platform-row" key={platform.id}>
                   <span className="rank-mark">{platform.rank}</span>
                   <span className="platform-name">{platform.name}</span>
-                  <span className="platform-share">{platform.marketSharePercent ? `${platform.marketSharePercent}%` : `权重 ${platform.platformWeight}`}</span>
+                  <span className="platform-share">{platform.marketSharePercent ? `份额 ${platform.marketSharePercent}%` : `覆盖权重 ${platform.platformWeight}`}</span>
                   <span className={`confidence ${platform.confidence}`}>{platform.confidence}</span>
+                  <small>{platform.shareBasis}</small>
                 </div>
               ))}
             </div>
