@@ -7,4 +7,6 @@ coverage/
 reports/
 reports-*.png
 data/latest-snapshot.json
+data/refresh.log
+data/vendor-exports/
 public/latest-snapshot.json
