@@ -4,13 +4,14 @@
 
 ```mermaid
 flowchart LR
-  A["GitHub Pages 静态前端"] -->|"HTTPS 页面发起请求"| B["http://127.0.0.1:8787 本机 API"]
-  B --> C["本机 data/latest-snapshot.json"]
-  B --> D["平台 API / 第三方数据商 / 合规采集器"]
-  B --> E["可选模型分析，仅 refresh:ai 调用"]
+  A["GitHub Pages 静态前端"] -->|"读取 config.json"| B["Cloudflare HTTPS tunnel URL"]
+  B --> C["127.0.0.1:8787 本机 API"]
+  C --> D["本机 data/latest-snapshot.json"]
+  C --> E["平台 API / 第三方数据商 / 合规采集器"]
+  C --> F["可选模型分析，仅 refresh:ai 调用"]
 ```
 
-前端部署到 GitHub Pages，后端只在本机运行。这样平台密钥、OpenAI 密钥、账号密码和会话签名密钥都不会进入公开页面或 GitHub Pages。
+前端部署到 GitHub Pages，后端绑定 `127.0.0.1` 并通过 HTTPS tunnel 转发。这样平台密钥、OpenAI 密钥、账号密码和会话签名密钥都只留在本机后端环境变量中，不会进入公开页面或 GitHub 仓库。
 
 ## 本机后端
 
@@ -50,21 +51,29 @@ npm run scheduler
 0 */12 * * * cd /home/ec2-user/overseas-ecommerce-hot-products-monitor && /usr/bin/npm run refresh >> data/refresh.log 2>&1
 ```
 
-## GitHub Pages 前端
+## GitHub Pages 前端与 tunnel
 
 1. 创建 GitHub 仓库并推送代码。
 2. 在仓库 Settings -> Pages 中选择 GitHub Actions。
 3. `.github/workflows/pages.yml` 会在 `main` 分支 push 后构建 `dist/` 并发布。
-4. 打开 Pages URL，输入本机 API 地址、账号和密码登录。
+4. 后端 tunnel URL 写在 `public/config.json`。这个 URL 不是密钥，Pages 会把它发布为 `/config.json`。
+5. tunnel URL 变化后运行：
+
+```bash
+scripts/sync-pages-tunnel-url.sh
+```
+
+脚本会从 `overseas-ecommerce-monitor-tunnel.service` 日志中读取当前 `trycloudflare.com` URL，校验 `/health`，更新 `public/config.json`，提交并推送。
+6. 打开 Pages URL，使用监控面板账号密码登录。
 
 ## 安全要点
 
-- 后端绑定 `127.0.0.1`，不监听 `0.0.0.0`。
+- 后端绑定 `127.0.0.1`，不监听 `0.0.0.0`，公网访问只通过 HTTPS tunnel 转发。
 - 前端只保存 API 地址到本机浏览器 `localStorage`，登录会话只保存在当前标签页的 `sessionStorage`。
 - `CORS_ORIGINS` 只允许你的 GitHub Pages 域名和本地开发域名。
-- 后端发送 `Access-Control-Allow-Private-Network: true`，用于 HTTPS 页面访问本机私有网络 API。
+- `public/config.json` 只包含后端 tunnel URL，不包含账号、密码、API key 或平台 token。
 - `.env`、平台密钥、OpenAI 密钥、Token、账号密码和真实快照不提交到仓库。
-- 如果需要远程访问后端，用 Tailscale、WireGuard 或 SSH tunnel，不要直接暴露端口。
+- 如果不使用 Cloudflare quick tunnel，也可以换成 Tailscale Funnel、WireGuard 或 SSH tunnel，不要直接暴露端口。
 
 ## 模型调用策略
 

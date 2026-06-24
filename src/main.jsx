@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowClockwise,
@@ -26,9 +26,81 @@ import {
 } from "recharts";
 import "./styles.css";
 
-const DEFAULT_API_URL = localStorage.getItem("apiUrl") || "http://127.0.0.1:8787";
-const DEFAULT_SESSION_TOKEN = sessionStorage.getItem("sessionToken") || "";
-const DEFAULT_SESSION_USER = sessionStorage.getItem("sessionUser") || "";
+const FALLBACK_API_URL = "http://127.0.0.1:8787";
+const LEGACY_API_BASE_KEY = "apiUrl";
+const API_BASE_KEY = "hot-products-monitor-api-base";
+const API_BASE_MANUAL_KEY = "hot-products-monitor-api-base-manual";
+const SESSION_TOKEN_KEY = "hot-products-monitor-session-token";
+const SESSION_USER_KEY = "hot-products-monitor-session-user";
+const DEFAULT_SESSION_TOKEN = sessionStorage.getItem(SESSION_TOKEN_KEY) || sessionStorage.getItem("sessionToken") || "";
+const DEFAULT_SESSION_USER = sessionStorage.getItem(SESSION_USER_KEY) || sessionStorage.getItem("sessionUser") || "";
+
+function normalizeApiUrl(value) {
+  return (value || "").trim().replace(/\/+$/, "");
+}
+
+function clearManualApiBase() {
+  localStorage.removeItem(API_BASE_KEY);
+  localStorage.removeItem(API_BASE_MANUAL_KEY);
+}
+
+function readConfiguredApiBase(defaultApiBase) {
+  if (localStorage.getItem(API_BASE_MANUAL_KEY) === "1") {
+    return normalizeApiUrl(localStorage.getItem(API_BASE_KEY)) || defaultApiBase;
+  }
+  return defaultApiBase;
+}
+
+function rememberApiBase(candidate, defaultApiBase) {
+  const normalized = normalizeApiUrl(candidate);
+  const normalizedDefault = normalizeApiUrl(defaultApiBase) || FALLBACK_API_URL;
+
+  if (normalized && normalized !== normalizedDefault) {
+    localStorage.setItem(API_BASE_KEY, normalized);
+    localStorage.setItem(API_BASE_MANUAL_KEY, "1");
+    return normalized;
+  }
+
+  clearManualApiBase();
+  return normalizedDefault;
+}
+
+function formatConnectionError(error) {
+  if (error instanceof TypeError || error.message === "Failed to fetch") {
+    return new Error("无法连接后端，请确认 API 地址或 tunnel 服务正在运行");
+  }
+  return error;
+}
+
+async function loadRuntimeConfig() {
+  const inlineApiBase = normalizeApiUrl(window.MONITOR_CONFIG?.defaultApiBase);
+  if (inlineApiBase) return inlineApiBase;
+
+  try {
+    const configUrl = new URL("config.json", window.location.href);
+    configUrl.searchParams.set("t", Date.now().toString());
+    const response = await fetch(configUrl, { cache: "no-store" });
+    if (!response.ok) return FALLBACK_API_URL;
+    const config = await response.json();
+    return normalizeApiUrl(config.defaultApiBase) || FALLBACK_API_URL;
+  } catch {
+    return FALLBACK_API_URL;
+  }
+}
+
+async function requestApi(apiUrl, path, options = {}) {
+  const base = normalizeApiUrl(apiUrl);
+  if (!base) throw new Error("缺少后端 API 地址");
+
+  const { token, headers, ...fetchOptions } = options;
+  const requestHeaders = { ...(headers || {}) };
+  if (token) requestHeaders.Authorization = `Bearer ${token}`;
+
+  return fetch(`${base}${path}`, {
+    ...fetchOptions,
+    headers: requestHeaders
+  });
+}
 
 function formatNumber(value) {
   return new Intl.NumberFormat("zh-CN").format(Math.round(value));
@@ -48,13 +120,9 @@ function compactNumber(value) {
 }
 
 async function loadApiSnapshot(apiUrl, sessionToken) {
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/snapshot`, {
-    headers: {
-      Authorization: `Bearer ${sessionToken}`
-    }
-  });
+  const response = await requestApi(apiUrl, "/api/snapshot", { token: sessionToken });
   if (!response.ok) {
-    throw new Error(`本机 API 返回 ${response.status}`);
+    throw new Error(response.status === 401 ? "登录已过期，请重新登录" : `后端 API 返回 ${response.status}`);
   }
   return response.json();
 }
@@ -62,8 +130,10 @@ async function loadApiSnapshot(apiUrl, sessionToken) {
 function useSnapshot() {
   const [snapshot, setSnapshot] = useState(null);
   const [source, setSource] = useState("local-api");
-  const [status, setStatus] = useState({ state: "idle", message: "请登录本机 API" });
-  const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
+  const [status, setStatus] = useState({ state: "loading", message: "正在读取后端配置" });
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [defaultApiUrl, setDefaultApiUrl] = useState(FALLBACK_API_URL);
+  const [apiUrl, setApiUrlState] = useState(readConfiguredApiBase(FALLBACK_API_URL));
   const [username, setUsername] = useState(DEFAULT_SESSION_USER);
   const [password, setPassword] = useState("");
   const [sessionToken, setSessionToken] = useState(DEFAULT_SESSION_TOKEN);
@@ -71,62 +141,136 @@ function useSnapshot() {
 
   useEffect(() => {
     let mounted = true;
-    if (!sessionToken) return () => {
+    const hasInitialSession = Boolean(DEFAULT_SESSION_TOKEN);
+    loadRuntimeConfig().then((configuredApiBase) => {
+      if (!mounted) return;
+      const normalizedDefault = normalizeApiUrl(configuredApiBase) || FALLBACK_API_URL;
+      localStorage.removeItem(LEGACY_API_BASE_KEY);
+      setDefaultApiUrl(normalizedDefault);
+      setApiUrlState(readConfiguredApiBase(normalizedDefault));
+      setConfigLoaded(true);
+      setStatus({
+        state: hasInitialSession ? "loading" : "idle",
+        message: hasInitialSession ? "恢复登录会话" : "请登录后访问数据"
+      });
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const requestWithFallback = useCallback(async (path, options = {}, retryDefault = true, baseOverride = "") => {
+    const base = normalizeApiUrl(baseOverride) || normalizeApiUrl(apiUrl) || defaultApiUrl;
+    try {
+      return {
+        response: await requestApi(base, path, options),
+        baseUrl: base
+      };
+    } catch (error) {
+      const storedBase = normalizeApiUrl(localStorage.getItem(API_BASE_KEY));
+      const canRetryDefault = retryDefault
+        && localStorage.getItem(API_BASE_MANUAL_KEY) === "1"
+        && storedBase
+        && defaultApiUrl
+        && storedBase !== defaultApiUrl;
+
+      if (!canRetryDefault) {
+        throw formatConnectionError(error);
+      }
+
+      clearManualApiBase();
+      setApiUrlState(defaultApiUrl);
+      try {
+        return {
+          response: await requestApi(defaultApiUrl, path, options),
+          baseUrl: defaultApiUrl
+        };
+      } catch (defaultError) {
+        throw formatConnectionError(defaultError);
+      }
+    }
+  }, [apiUrl, defaultApiUrl]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!configLoaded || !sessionToken) return () => {
       mounted = false;
     };
 
     setStatus({ state: "loading", message: "恢复登录会话" });
-    loadApiSnapshot(apiUrl, sessionToken)
-      .then((data) => {
+    requestWithFallback("/api/snapshot", { token: sessionToken })
+      .then(async ({ response, baseUrl }) => {
         if (!mounted) return;
+        if (!response.ok) {
+          throw new Error(response.status === 401 ? "登录已过期，请重新登录" : `后端 API 返回 ${response.status}`);
+        }
+        const data = await response.json();
         setSnapshot(data);
         setSource("local-api");
-        setStatus({ state: "ready", message: "已连接本机 API" });
+        setApiUrlState(baseUrl);
+        setStatus({ state: "ready", message: "已连接后端 API" });
       })
-      .catch(() => {
+      .catch((error) => {
         if (!mounted) return;
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+        sessionStorage.removeItem(SESSION_USER_KEY);
         sessionStorage.removeItem("sessionToken");
         sessionStorage.removeItem("sessionUser");
         setSessionToken("");
         setSessionUser("");
         setSnapshot(null);
-        setStatus({ state: "idle", message: "登录已过期，请重新登录" });
+        setStatus({ state: "idle", message: error.message || "登录已过期，请重新登录" });
       });
     return () => {
       mounted = false;
     };
-  }, [apiUrl, sessionToken]);
+  }, [configLoaded, requestWithFallback, sessionToken]);
+
+  function setApiUrl(value) {
+    setApiUrlState(value);
+  }
 
   async function login() {
-    localStorage.setItem("apiUrl", apiUrl);
+    if (!configLoaded) {
+      setStatus({ state: "loading", message: "后端配置尚未加载，请稍后再试" });
+      return;
+    }
+
+    const loginBaseUrl = rememberApiBase(apiUrl, defaultApiUrl);
+    setApiUrlState(loginBaseUrl);
     setStatus({ state: "loading", message: "正在登录" });
     try {
-      const loginResponse = await fetch(`${apiUrl.replace(/\/$/, "")}/api/login`, {
+      const { response: loginResponse, baseUrl } = await requestWithFallback("/api/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ username, password })
-      });
+      }, true, loginBaseUrl);
       if (!loginResponse.ok) {
         throw new Error("账号或密码不正确");
       }
       const session = await loginResponse.json();
-      sessionStorage.setItem("sessionToken", session.token);
-      sessionStorage.setItem("sessionUser", session.user.username);
+      sessionStorage.setItem(SESSION_TOKEN_KEY, session.token);
+      sessionStorage.setItem(SESSION_USER_KEY, session.user.username);
+      sessionStorage.removeItem("sessionToken");
+      sessionStorage.removeItem("sessionUser");
       setSessionToken(session.token);
       setSessionUser(session.user.username);
       setPassword("");
-      const data = await loadApiSnapshot(apiUrl, session.token);
+      const data = await loadApiSnapshot(baseUrl, session.token);
       setSnapshot(data);
       setSource("local-api");
-      setStatus({ state: "ready", message: "已连接本机 API" });
+      setApiUrlState(baseUrl);
+      setStatus({ state: "ready", message: "已连接后端 API" });
     } catch (error) {
       setStatus({ state: "error", message: error.message });
     }
   }
 
   function logout() {
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    sessionStorage.removeItem(SESSION_USER_KEY);
     sessionStorage.removeItem("sessionToken");
     sessionStorage.removeItem("sessionUser");
     setSessionToken("");
@@ -141,17 +285,16 @@ function useSnapshot() {
       setStatus({ state: "error", message: "请先登录后再刷新" });
       return;
     }
-    setStatus({ state: "loading", message: "触发本机刷新" });
+    setStatus({ state: "loading", message: "触发后端刷新" });
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/refresh`, {
+      const { response, baseUrl } = await requestWithFallback("/api/refresh", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${sessionToken}`
-        }
+        token: sessionToken
       });
       if (!response.ok) {
         throw new Error(`刷新请求返回 ${response.status}`);
       }
+      setApiUrlState(baseUrl);
       setStatus({ state: "ready", message: "刷新已提交，稍后重新连接" });
     } catch (error) {
       setStatus({ state: "error", message: error.message });
@@ -265,7 +408,7 @@ function App() {
           <div className="api-card">
             <div className="section-title">
               <Plug size={18} weight="duotone" />
-              <span>本机后端连接</span>
+              <span>后端连接</span>
             </div>
             <div className="api-grid">
               <label>
@@ -387,7 +530,7 @@ function LoginShell({ status, apiUrl, username, password, setApiUrl, setUsername
             <Database size={22} weight="duotone" />
             <span>海外电商平台爆品监控</span>
           </div>
-          <p>请先使用监控面板账号密码登录，本机 API 认证后才会返回数据。</p>
+          <p>请先使用监控面板账号密码登录，后端认证通过后才会返回数据。</p>
         </div>
         <div className={`status-pill ${status.state}`}>
           <LockKey size={18} weight="bold" />
@@ -403,7 +546,7 @@ function LoginShell({ status, apiUrl, username, password, setApiUrl, setUsername
             <div className="panel-heading">
               <div>
                 <h1>登录监控面板</h1>
-                <p>账号密码由本机后端 `.env` 管理，不会写入 GitHub Pages 或前端代码。</p>
+                <p>账号密码由本机后端环境变量管理，不会写入 GitHub Pages 或前端代码。</p>
               </div>
             </div>
             <label>
@@ -442,7 +585,7 @@ function StatusPill({ status, source, generatedAt, sessionUser }) {
       <div>
         <strong>{status.message}</strong>
         <span>
-          {source === "local-api" ? `本机 API / ${sessionUser}` : "静态快照"} / {new Date(generatedAt).toLocaleString("zh-CN")}
+          {source === "local-api" ? `后端 API / ${sessionUser}` : "静态快照"} / {new Date(generatedAt).toLocaleString("zh-CN")}
         </span>
       </div>
     </div>
@@ -745,13 +888,13 @@ function SecurityPanel() {
       <div className="panel-heading">
         <div>
           <h2>安全部署</h2>
-          <p>前端公开，后端本机私有，模型和平台密钥只留在后端。</p>
+          <p>前端公开，后端绑定本机地址，模型和平台密钥只留在后端。</p>
         </div>
       </div>
       <div className="security-list">
         <div>
           <ShieldCheck size={20} weight="duotone" />
-          <span>后端绑定 127.0.0.1，不暴露公网监听。</span>
+          <span>后端绑定 127.0.0.1，通过 HTTPS tunnel 转发。</span>
         </div>
         <div>
           <ShieldCheck size={20} weight="duotone" />

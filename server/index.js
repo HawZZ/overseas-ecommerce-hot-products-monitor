@@ -15,16 +15,19 @@ const host = process.env.API_HOST || "127.0.0.1";
 const port = Number(process.env.API_PORT || 8787);
 const runtimeSecret = crypto.randomBytes(32).toString("base64url");
 const apiToken = process.env.API_TOKEN || runtimeSecret;
-const dashboardUsername = process.env.DASHBOARD_USERNAME || "admin";
-const dashboardPassword = process.env.DASHBOARD_PASSWORD || apiToken;
-const sessionSecret = process.env.SESSION_SECRET || runtimeSecret;
+const dashboardUsername = process.env.DASHBOARD_USERNAME || process.env.MONITOR_USERNAME || "admin";
+const dashboardPassword = process.env.DASHBOARD_PASSWORD || process.env.MONITOR_PASSWORD || apiToken;
+const sessionSecret = process.env.SESSION_SECRET || process.env.MONITOR_SECRET_KEY || runtimeSecret;
 const sessionTtlHours = Number(process.env.SESSION_TTL_HOURS || 12);
+const loginWindowMs = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const loginMaxFailures = Number(process.env.LOGIN_RATE_LIMIT_MAX_FAILURES || 8);
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://127.0.0.1:5173,http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
 const app = express();
+const loginFailures = new Map();
 
 app.use(
   helmet({
@@ -33,6 +36,7 @@ app.use(
 );
 app.use(morgan("tiny"));
 app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: false, limit: "32kb" }));
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Private-Network", "true");
   next();
@@ -103,6 +107,41 @@ function requireSession(req, res, next) {
   next();
 }
 
+function loginClientKey(req) {
+  const forwarded = req.get("cf-connecting-ip") || req.get("x-forwarded-for") || req.ip || "unknown";
+  return forwarded.split(",")[0].trim();
+}
+
+function loginFailureState(req) {
+  const key = loginClientKey(req);
+  const now = Date.now();
+  const state = loginFailures.get(key);
+  if (!state || state.resetAt <= now) {
+    const fresh = { count: 0, resetAt: now + loginWindowMs };
+    loginFailures.set(key, fresh);
+    return { key, state: fresh };
+  }
+  return { key, state };
+}
+
+function requireLoginRateLimit(req, res, next) {
+  const { state } = loginFailureState(req);
+  if (state.count >= loginMaxFailures) {
+    res.status(429).json({ error: "Too many login attempts" });
+    return;
+  }
+  next();
+}
+
+function recordLoginFailure(req) {
+  const { state } = loginFailureState(req);
+  state.count += 1;
+}
+
+function clearLoginFailures(req) {
+  loginFailures.delete(loginClientKey(req));
+}
+
 async function readSnapshot() {
   const snapshotPath = path.resolve(dataDir, "latest-snapshot.json");
   const text = await fs.readFile(snapshotPath, "utf8");
@@ -118,13 +157,15 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", requireLoginRateLimit, (req, res) => {
   const { username, password } = req.body || {};
   if (!safeEqual(username, dashboardUsername) || !safeEqual(password, dashboardPassword)) {
+    recordLoginFailure(req);
     res.status(401).json({ error: "Invalid username or password" });
     return;
   }
 
+  clearLoginFailures(req);
   const session = createSessionToken(username);
   res.json({
     token: session.token,
@@ -188,5 +229,5 @@ app.use((error, _req, res, _next) => {
 app.listen(port, host, () => {
   console.log(`Local API listening on http://${host}:${port}`);
   console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
-  console.log(`Dashboard login user: ${dashboardUsername}`);
+  console.log("Dashboard login configured: yes");
 });
