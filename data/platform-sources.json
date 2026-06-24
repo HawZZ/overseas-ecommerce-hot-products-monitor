@@ -1,0 +1,274 @@
+{
+  "lastResearchedAt": "2026-06-24",
+  "notes": [
+    "Ranks are seed priorities for monitoring coverage, not a single audited GMV league table across every country.",
+    "Use marketSharePercent only when a cited source publishes comparable share data. Use platformWeight when the source gives rank, GMV or market-leadership language without a full regional denominator.",
+    "Amazon is included as both a regional platform where relevant and a global benchmark data source."
+  ],
+  "sources": [
+    {
+      "id": "momentum-sea-2026",
+      "title": "Momentum Works, Ecommerce in Southeast Asia 2026",
+      "url": "https://momentum.asia/insights/detail/ecommerce-in-southeast-asia-2026",
+      "observed": "SEA platform GMV reached US$157.6B in 2025. Public excerpts name Shopee, TikTok Shop and Lazada as the dominant platforms."
+    },
+    {
+      "id": "cube-sea-2026",
+      "title": "Cube Asia, Shopee, Lazada, and TikTok Shop in Southeast Asia",
+      "url": "https://cube.asia/shopee-lazada-and-tiktok-shop-in-southeast-asia-what-the-data-shows-in-2026/",
+      "observed": "For SEA-6 physical goods GMV across Shopee, TikTok Shop and Lazada, Cube estimates Shopee 59%, TikTok Shop 31%, Lazada 9% in FY 2025."
+    },
+    {
+      "id": "statista-us-2025",
+      "title": "Statista, market share of leading retail e-commerce companies in the United States in 2025",
+      "url": "https://www.statista.com/statistics/274255/market-share-of-the-leading-retailers-in-us-e-commerce/",
+      "observed": "Public search excerpt lists Amazon 40.5%, Walmart 9.2%, Apple 3.2%, Tesla 3.1%."
+    },
+    {
+      "id": "forbes-us-ecommerce-2026",
+      "title": "Forbes Advisor, 35 Top E-Commerce Statistics",
+      "url": "https://www.forbes.com/advisor/business/ecommerce-statistics/",
+      "observed": "Public excerpt lists Amazon 37.6%, Walmart 6.4%, Apple 3.6% and eBay 3.0% of U.S. ecommerce sales."
+    },
+    {
+      "id": "lengow-eu-marketplaces-2026",
+      "title": "Lengow, Top Marketplaces in the EU",
+      "url": "https://www.lengow.com/get-to-know-more/top-marketplaces-in-the-eu/",
+      "observed": "Public excerpt says Amazon and eBay together capture more than half of marketplace-driven turnover in Europe and cites EU marketplace GMV."
+    },
+    {
+      "id": "globeneewswire-europe-b2c-2025",
+      "title": "GlobeNewswire, Europe B2C Ecommerce Market Report 2025",
+      "url": "https://www.globenewswire.com/news-release/2026/02/04/3232200/28124/en/europe-b2c-ecommerce-market-report-2025-a-1-5-trn-market-by-2029-amazon-leads-core-markets-zalando-cdiscount-allegro-and-bol-com-defend-local-scale-as-temu-shein-and-tiktok-shop-ex.html",
+      "observed": "Public excerpt names Amazon as leading core markets while Zalando, Cdiscount, Allegro and Bol.com defend local scale."
+    },
+    {
+      "id": "lengow-africa-marketplaces-2026",
+      "title": "Lengow, Top African marketplaces",
+      "url": "https://www.lengow.com/get-to-know-more/top-african-marketplaces/",
+      "observed": "Public excerpt cites ECDB 2025 global retailer ranking: Amazon, Takealot and Jumia lead Africa online retail by GMV, followed by SHEIN, Temu and Noon."
+    }
+  ],
+  "regions": [
+    {
+      "id": "sea",
+      "name": "东南亚",
+      "basis": "SEA-6 marketplace GMV and regional platform GMV excerpts",
+      "sourceIds": ["momentum-sea-2026", "cube-sea-2026"],
+      "platforms": [
+        {
+          "rank": 1,
+          "id": "shopee",
+          "name": "Shopee",
+          "marketSharePercent": 59,
+          "shareBasis": "Cube Asia 2025 share across Shopee, TikTok Shop and Lazada in SEA-6",
+          "confidence": "high",
+          "collectionModes": ["seller-center-export", "market-intelligence-vendor", "category-page-monitor"]
+        },
+        {
+          "rank": 2,
+          "id": "tiktok-shop",
+          "name": "TikTok Shop",
+          "marketSharePercent": 31,
+          "shareBasis": "Cube Asia 2025 share across Shopee, TikTok Shop and Lazada in SEA-6",
+          "confidence": "high",
+          "collectionModes": ["affiliate-center-export", "creator-search", "market-intelligence-vendor"]
+        },
+        {
+          "rank": 3,
+          "id": "lazada",
+          "name": "Lazada",
+          "marketSharePercent": 9,
+          "shareBasis": "Cube Asia 2025 share across Shopee, TikTok Shop and Lazada in SEA-6",
+          "confidence": "high",
+          "collectionModes": ["seller-center-export", "category-page-monitor"]
+        },
+        {
+          "rank": 4,
+          "id": "tokopedia",
+          "name": "Tokopedia",
+          "platformWeight": 4.2,
+          "shareBasis": "Indonesia local marketplace retained as a tracking dimension after TikTok integration",
+          "confidence": "medium",
+          "collectionModes": ["local-catalog-monitor", "market-intelligence-vendor"]
+        },
+        {
+          "rank": 5,
+          "id": "tiki",
+          "name": "Tiki",
+          "platformWeight": 1.8,
+          "shareBasis": "Vietnam local marketplace used for localized product discovery signals",
+          "confidence": "medium",
+          "collectionModes": ["local-catalog-monitor", "search-rank-monitor"]
+        }
+      ]
+    },
+    {
+      "id": "north-america",
+      "name": "北美",
+      "basis": "U.S. retail ecommerce share used as North America proxy until Canada and Mexico feeds are connected",
+      "sourceIds": ["statista-us-2025", "forbes-us-ecommerce-2026"],
+      "platforms": [
+        {
+          "rank": 1,
+          "id": "amazon-us",
+          "name": "Amazon",
+          "marketSharePercent": 37.6,
+          "shareBasis": "Forbes public excerpt, U.S. ecommerce sales",
+          "confidence": "high",
+          "collectionModes": ["amazon-sp-api", "amazon-ads-api", "brand-analytics-export"]
+        },
+        {
+          "rank": 2,
+          "id": "walmart",
+          "name": "Walmart Marketplace",
+          "marketSharePercent": 6.4,
+          "shareBasis": "Forbes public excerpt, U.S. ecommerce sales",
+          "confidence": "high",
+          "collectionModes": ["walmart-marketplace-api", "search-rank-monitor"]
+        },
+        {
+          "rank": 3,
+          "id": "apple",
+          "name": "Apple Online Store",
+          "marketSharePercent": 3.6,
+          "shareBasis": "Forbes public excerpt, U.S. ecommerce sales",
+          "confidence": "medium",
+          "collectionModes": ["category-page-monitor", "search-demand-proxy"]
+        },
+        {
+          "rank": 4,
+          "id": "ebay",
+          "name": "eBay",
+          "marketSharePercent": 3,
+          "shareBasis": "Forbes public excerpt, U.S. ecommerce sales",
+          "confidence": "high",
+          "collectionModes": ["ebay-browse-api", "completed-listings-export"]
+        },
+        {
+          "rank": 5,
+          "id": "target",
+          "name": "Target",
+          "marketSharePercent": 1.9,
+          "shareBasis": "Common public Statista-derived U.S. ecommerce ranking excerpt",
+          "confidence": "medium",
+          "collectionModes": ["category-page-monitor", "retail-media-export"]
+        }
+      ]
+    },
+    {
+      "id": "western-europe",
+      "name": "西欧",
+      "basis": "Western Europe marketplace presence and EU marketplace turnover sources",
+      "sourceIds": ["lengow-eu-marketplaces-2026", "globeneewswire-europe-b2c-2025"],
+      "platforms": [
+        {
+          "rank": 1,
+          "id": "amazon-eu",
+          "name": "Amazon",
+          "platformWeight": 38,
+          "shareBasis": "Market-leadership rank, Amazon and eBay together exceed half of marketplace-driven turnover in Europe",
+          "confidence": "high",
+          "collectionModes": ["amazon-sp-api", "amazon-ads-api", "brand-analytics-export"]
+        },
+        {
+          "rank": 2,
+          "id": "ebay-eu",
+          "name": "eBay",
+          "platformWeight": 17,
+          "shareBasis": "Market-leadership rank, Amazon and eBay together exceed half of marketplace-driven turnover in Europe",
+          "confidence": "high",
+          "collectionModes": ["ebay-browse-api", "completed-listings-export"]
+        },
+        {
+          "rank": 3,
+          "id": "zalando",
+          "name": "Zalando",
+          "platformWeight": 9,
+          "shareBasis": "Named European local-scale defender and high-relevance fashion marketplace",
+          "confidence": "medium",
+          "collectionModes": ["partner-export", "category-page-monitor"]
+        },
+        {
+          "rank": 4,
+          "id": "cdiscount",
+          "name": "Cdiscount",
+          "platformWeight": 6,
+          "shareBasis": "Named European local-scale defender, France-heavy marketplace",
+          "confidence": "medium",
+          "collectionModes": ["seller-export", "category-page-monitor"]
+        },
+        {
+          "rank": 5,
+          "id": "bol",
+          "name": "bol.com",
+          "platformWeight": 5,
+          "shareBasis": "Named European local-scale defender, Benelux-heavy marketplace",
+          "confidence": "medium",
+          "collectionModes": ["retailer-api", "category-page-monitor"]
+        }
+      ]
+    },
+    {
+      "id": "africa",
+      "name": "非洲",
+      "basis": "ECDB 2025 global retailer ranking cited by marketplace coverage",
+      "sourceIds": ["lengow-africa-marketplaces-2026"],
+      "platforms": [
+        {
+          "rank": 1,
+          "id": "amazon-africa",
+          "name": "Amazon",
+          "platformWeight": 24,
+          "shareBasis": "ECDB ranking excerpt cited by Lengow",
+          "confidence": "medium",
+          "collectionModes": ["amazon-sp-api", "category-page-monitor"]
+        },
+        {
+          "rank": 2,
+          "id": "takealot",
+          "name": "Takealot",
+          "platformWeight": 20,
+          "shareBasis": "ECDB ranking excerpt cited by Lengow",
+          "confidence": "high",
+          "collectionModes": ["seller-export", "category-page-monitor"]
+        },
+        {
+          "rank": 3,
+          "id": "jumia",
+          "name": "Jumia",
+          "platformWeight": 18,
+          "shareBasis": "ECDB ranking excerpt cited by Lengow",
+          "confidence": "high",
+          "collectionModes": ["seller-center-export", "category-page-monitor"]
+        },
+        {
+          "rank": 4,
+          "id": "shein-africa",
+          "name": "SHEIN",
+          "platformWeight": 10,
+          "shareBasis": "ECDB ranking excerpt cited by Lengow",
+          "confidence": "medium",
+          "collectionModes": ["trend-monitor", "category-page-monitor"]
+        },
+        {
+          "rank": 5,
+          "id": "temu-africa",
+          "name": "Temu",
+          "platformWeight": 8,
+          "shareBasis": "ECDB ranking excerpt cited by Lengow",
+          "confidence": "medium",
+          "collectionModes": ["trend-monitor", "category-page-monitor"]
+        }
+      ]
+    }
+  ],
+  "globalDataSources": [
+    {
+      "id": "amazon-global",
+      "name": "Amazon global benchmark",
+      "role": "Use SP-API, Ads API and Brand Analytics exports as the benchmark feed for sales, search, conversion and average order value signals where seller access is available.",
+      "securityNote": "Keep Amazon credentials only on the local backend or in a secrets manager. Never publish them to GitHub Pages."
+    }
+  ]
+}

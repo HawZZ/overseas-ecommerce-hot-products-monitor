@@ -1,0 +1,13 @@
+{
+  "amazon-global": {
+    "enabled": false,
+    "type": "amazon-sp-api",
+    "notes": "Fill this in on the local backend only. Do not commit real credentials."
+  },
+  "vendor-report-upload": {
+    "enabled": true,
+    "type": "csv-folder",
+    "path": "./data/vendor-exports",
+    "notes": "Drop marketplace or third-party data vendor exports here. The current script can be extended to parse them before synthetic fallback runs."
+  }
+}
