@@ -1604,3 +1604,35 @@ select:focus {
     flex-direction: column;
   }
 }
+
+/* Login: API URL row with reset button */
+.api-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.api-url-row input {
+  flex: 1;
+  min-width: 0;
+}
+.reset-url-btn {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--surface-line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.reset-url-btn:hover {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+/* Disabled login button */
+.primary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

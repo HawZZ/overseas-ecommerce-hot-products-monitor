@@ -508,6 +508,8 @@ function App() {
     return (
       <LoginShell
         status={status}
+        configLoaded={configLoaded}
+        defaultApiUrl={defaultApiUrl}
         apiUrl={apiUrl}
         username={username}
         password={password}
@@ -655,10 +657,14 @@ function App() {
   );
 }
 
-function LoginShell({ status, apiUrl, username, password, setApiUrl, setUsername, setPassword, login }) {
+function LoginShell({ status, configLoaded, defaultApiUrl, apiUrl, username, password, setApiUrl, setUsername, setPassword, login }) {
   function handleSubmit(event) {
     event.preventDefault();
-    login();
+    if (configLoaded) login();
+  }
+
+  function resetApiUrl() {
+    setApiUrl(defaultApiUrl || "");
   }
 
   return (
@@ -690,7 +696,14 @@ function LoginShell({ status, apiUrl, username, password, setApiUrl, setUsername
             </div>
             <label>
               API 地址
-              <input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} />
+              <div className="api-url-row">
+                <input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} placeholder="https://..." />
+                {defaultApiUrl && apiUrl !== defaultApiUrl && (
+                  <button type="button" className="reset-url-btn" onClick={resetApiUrl} title="恢复默认 API 地址">
+                    重置
+                  </button>
+                )}
+              </div>
             </label>
             <label>
               账号
@@ -705,9 +718,9 @@ function LoginShell({ status, apiUrl, username, password, setApiUrl, setUsername
                 autoComplete="current-password"
               />
             </label>
-            <button className="primary-button" type="submit">
+            <button className="primary-button" type="submit" disabled={!configLoaded}>
               <LockKey size={16} weight="bold" />
-              登录
+              {configLoaded ? "登录" : "配置加载中…"}
             </button>
           </form>
         </section>
