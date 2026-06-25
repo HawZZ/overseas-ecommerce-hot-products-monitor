@@ -4,6 +4,8 @@ import {
   ArrowClockwise,
   BellRinging,
   ChartLineUp,
+  CaretDown,
+  CaretRight,
   CheckCircle,
   Database,
   Funnel,
@@ -139,6 +141,114 @@ function stageLabel(stage) {
     watch: "观察"
   };
   return labels[stage] || stage || "观察";
+}
+
+function stagePriority(stage) {
+  const priorities = {
+    scale: 4,
+    test: 3,
+    "fix-margin": 2,
+    watch: 1
+  };
+  return priorities[stage] || 0;
+}
+
+function weightedAverage(products, valueSelector, weightSelector) {
+  const totalWeight = products.reduce((sum, product) => sum + Math.max(0, Number(weightSelector(product)) || 0), 0);
+  if (!totalWeight) {
+    return products.reduce((sum, product) => sum + (Number(valueSelector(product)) || 0), 0) / Math.max(1, products.length);
+  }
+
+  return products.reduce((sum, product) => {
+    const weight = Math.max(0, Number(weightSelector(product)) || 0);
+    return sum + (Number(valueSelector(product)) || 0) * weight;
+  }, 0) / totalWeight;
+}
+
+function buildSkuGroups(products) {
+  const groupsBySku = new Map();
+
+  for (const product of products) {
+    const keyParts = [
+      product.title?.trim().toLowerCase(),
+      product.categoryId || product.categoryName,
+      product.priceTierId || product.priceTierLabel
+    ];
+    const key = keyParts.join("|");
+
+    if (!groupsBySku.has(key)) {
+      groupsBySku.set(key, {
+        key,
+        products: []
+      });
+    }
+    groupsBySku.get(key).products.push(product);
+  }
+
+  return [...groupsBySku.values()]
+    .map((group) => {
+      const variants = [...group.products].sort((a, b) => b.opportunityScore - a.opportunityScore);
+      const representative = variants[0];
+      const platformNames = [...new Set(variants.map((product) => product.platformName).filter(Boolean))];
+      const regionNames = [...new Set(variants.map((product) => product.regionName).filter(Boolean))];
+      const sales90d = variants.reduce((sum, product) => sum + (Number(product.summary?.sales90d) || 0), 0);
+      const search90d = variants.reduce((sum, product) => sum + (Number(product.summary?.search90d) || 0), 0);
+      const stage = variants.reduce((best, product) => (
+        stagePriority(product.stage) > stagePriority(best) ? product.stage : best
+      ), representative.stage);
+
+      return {
+        id: group.key,
+        representative,
+        variants,
+        variantCount: variants.length,
+        platformCount: platformNames.length,
+        regionCount: regionNames.length,
+        platformNames,
+        regionNames,
+        title: representative.title,
+        categoryName: representative.categoryName,
+        priceTierLabel: representative.priceTierLabel,
+        stage,
+        rank: representative.rank,
+        opportunityScore: Math.max(...variants.map((product) => Number(product.opportunityScore) || 0)),
+        summary: {
+          sales90d,
+          search90d,
+          searchChange: weightedAverage(variants, (product) => product.summary?.searchChange, (product) => product.summary?.search90d),
+          salesChange: weightedAverage(variants, (product) => product.summary?.salesChange, (product) => product.summary?.sales90d),
+          conversionRate: weightedAverage(variants, (product) => product.summary?.conversionRate, (product) => product.summary?.search90d),
+          averageOrderValue: weightedAverage(variants, (product) => product.summary?.averageOrderValue, (product) => product.summary?.sales90d)
+        },
+        pricing: {
+          grossMarginRate: weightedAverage(variants, (product) => product.pricing?.grossMarginRate, (product) => product.summary?.sales90d || 1)
+        },
+        sentiment: {
+          score: weightedAverage(variants, (product) => product.sentiment?.score, (product) => product.sentiment?.reviewVolume || product.summary?.sales90d || 1)
+        }
+      };
+    })
+    .sort((a, b) => b.opportunityScore - a.opportunityScore)
+    .map((group, index) => ({ ...group, rank: index + 1 }));
+}
+
+function collectSnapshotProducts(snapshot) {
+  if (!snapshot) return [];
+
+  const candidates = [
+    ...(snapshot.skuShortlist || []),
+    ...(snapshot.tierRanks?.flatMap((tier) => tier.products || []) || []),
+    ...(snapshot.rankGroups?.flatMap((group) => group.products || []) || [])
+  ];
+  const productsById = new Map();
+
+  for (const product of candidates) {
+    if (product?.id && !productsById.has(product.id)) {
+      productsById.set(product.id, product);
+    }
+  }
+
+  return [...productsById.values()];
 }
 
 async function loadApiSnapshot(apiUrl, sessionToken) {
@@ -367,7 +477,7 @@ function App() {
 
   const products = useMemo(() => {
     if (!snapshot) return [];
-    const shortlist = snapshot.skuShortlist || snapshot.tierRanks?.flatMap((tier) => tier.products) || [];
+    const shortlist = collectSnapshotProducts(snapshot);
     return shortlist
       .filter((product) => regionId === "all" || product.regionId === regionId)
       .filter((product) => categoryId === "all" || product.categoryId === categoryId)
@@ -379,13 +489,12 @@ function App() {
         return text.includes(query.trim().toLowerCase());
       })
       .sort((a, b) => b.opportunityScore - a.opportunityScore)
-      .slice(0, 30)
       .map((product, index) => ({ ...product, rank: index + 1 }));
   }, [snapshot, regionId, categoryId, tierId, stage, query]);
 
   const selectedProduct = useMemo(() => {
     if (!snapshot) return null;
-    const allProducts = snapshot.skuShortlist || snapshot.tierRanks?.flatMap((tier) => tier.products) || [];
+    const allProducts = collectSnapshotProducts(snapshot);
     return allProducts.find((product) => product.id === selectedProductId) || products[0] || null;
   }, [snapshot, selectedProductId, products]);
 
@@ -753,15 +862,34 @@ function OpportunityPools({ snapshot }) {
 }
 
 function SkuScreening({ products, selectedProductId, onSelect }) {
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  const skuGroups = useMemo(() => buildSkuGroups(products), [products]);
+
+  useEffect(() => {
+    setExpandedGroups(new Set());
+  }, [products]);
+
+  function toggleGroup(groupId) {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }
+
   return (
     <section className="panel">
       <div className="panel-heading">
         <div>
           <h2>SKU筛选清单</h2>
-          <p>competitor-analysis和pricing-strategy结合90天趋势，给出watch、test、scale或修毛利阶段。</p>
+          <p>同款SKU先跨平台合并，再展开查看平台和区域二级明细。</p>
         </div>
       </div>
-      {products.length === 0 ? (
+      {skuGroups.length === 0 ? (
         <div className="empty-state">没有符合筛选条件的SKU。</div>
       ) : (
         <div className="product-table" role="table" aria-label="SKU筛选">
@@ -774,24 +902,73 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
             <span>口碑</span>
             <span>搜索</span>
           </div>
-          {products.slice(0, 16).map((product) => (
-            <button
-              className={`product-row ${selectedProductId === product.id ? "active" : ""}`}
-              key={product.id}
-              onClick={() => onSelect(product.id)}
-              type="button"
+          {skuGroups.slice(0, 16).map((group) => (
+            <div
+              className={`product-group ${group.variants.some((product) => selectedProductId === product.id) ? "active" : ""}`}
+              key={group.id}
+              role="rowgroup"
             >
-              <span className="rank-mark">{product.rank}</span>
-              <span>
-                <strong>{product.title}</strong>
-                <small>{product.regionName} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}</small>
-              </span>
-              <span className={`stage-pill ${product.stage}`}>{stageLabel(product.stage)}</span>
-              <span className="score-value">{product.opportunityScore}</span>
-              <span>{formatPercent(product.pricing.grossMarginRate)}</span>
-              <span>{product.sentiment.score}</span>
-              <span className={product.summary.searchChange >= 0 ? "trend-up" : "trend-down"}>{formatTrend(product.summary.searchChange)}</span>
-            </button>
+              <div
+                className="product-row product-row-main"
+              >
+                <span className="rank-cell">
+                  <button
+                    aria-label={`${expandedGroups.has(group.id) ? "收起" : "展开"} ${group.title} 平台明细`}
+                    className="sku-expand-button"
+                    onClick={() => toggleGroup(group.id)}
+                    type="button"
+                  >
+                    {expandedGroups.has(group.id) ? <CaretDown size={13} weight="bold" /> : <CaretRight size={13} weight="bold" />}
+                  </button>
+                  <span className="rank-mark">{group.rank}</span>
+                </span>
+                <button className="sku-main-select" onClick={() => onSelect(group.representative.id)} type="button">
+                  <span>
+                    <strong>{group.title}</strong>
+                    <small>
+                      {group.platformCount}个平台 / {group.regionCount}个区域 / {group.categoryName} / {group.priceTierLabel}
+                    </small>
+                  </span>
+                  <span className={`stage-pill ${group.stage}`}>{stageLabel(group.stage)}</span>
+                  <span className="score-value">{group.opportunityScore}</span>
+                  <span>{formatPercent(group.pricing.grossMarginRate)}</span>
+                  <span>{group.sentiment.score.toFixed(2)}</span>
+                  <span className={group.summary.searchChange >= 0 ? "trend-up" : "trend-down"}>{formatTrend(group.summary.searchChange)}</span>
+                </button>
+              </div>
+              {expandedGroups.has(group.id) && (
+                <div className="sku-subrows" role="group" aria-label={`${group.title} 平台和区域明细`}>
+                  <div className="sku-subrow sku-subrow-head">
+                    <span>平台/区域</span>
+                    <span>阶段</span>
+                    <span>90天销量</span>
+                    <span>90天搜索</span>
+                    <span>成单率</span>
+                    <span>客单价</span>
+                    <span>机会分</span>
+                  </div>
+                  {group.variants.map((product) => (
+                    <button
+                      className={`sku-subrow ${selectedProductId === product.id ? "active" : ""}`}
+                      key={product.id}
+                      onClick={() => onSelect(product.id)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{product.platformName}</strong>
+                        <small>{product.regionName}</small>
+                      </span>
+                      <span className={`stage-pill ${product.stage}`}>{stageLabel(product.stage)}</span>
+                      <span>{formatNumber(product.summary.sales90d)}</span>
+                      <span>{formatNumber(product.summary.search90d)}</span>
+                      <span>{formatPercent(product.summary.conversionRate)}</span>
+                      <span>${product.summary.averageOrderValue.toFixed(2)}</span>
+                      <span className="score-value">{product.opportunityScore}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}

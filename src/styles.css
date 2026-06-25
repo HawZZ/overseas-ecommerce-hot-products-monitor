@@ -761,10 +761,69 @@ select:focus {
   text-align: left;
 }
 
-.product-row:hover,
-.product-row.active {
+.product-group {
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.product-group.active,
+.product-group:hover {
   border-color: var(--surface-line);
   background: #f4f8f5;
+}
+
+.product-row-main {
+  grid-template-columns: 46px minmax(0, 1fr);
+  border: 0;
+}
+
+.product-row-main:hover {
+  background: transparent;
+}
+
+.rank-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sku-expand-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-strong);
+  padding: 0;
+}
+
+.sku-expand-button:hover,
+.sku-expand-button:focus-visible {
+  background: var(--surface-muted);
+  color: var(--accent);
+  outline: none;
+}
+
+.sku-main-select {
+  display: grid;
+  grid-template-columns: minmax(230px, 1.6fr) 76px 76px 70px 64px 72px;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+}
+
+.sku-main-select:focus-visible,
+.sku-subrow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .product-row span {
@@ -782,6 +841,59 @@ select:focus {
 
 .product-row small {
   margin-top: 2px;
+  font-size: 11px;
+}
+
+.sku-subrows {
+  display: grid;
+  gap: 4px;
+  margin: 0 8px 8px 64px;
+  border-top: 1px solid var(--surface-line);
+  padding-top: 8px;
+}
+
+.sku-subrow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) 76px 88px 88px 76px 76px 68px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.sku-subrow:not(.sku-subrow-head):hover,
+.sku-subrow.active {
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+}
+
+.sku-subrow-head {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  pointer-events: none;
+}
+
+.sku-subrow span {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.sku-subrow strong,
+.sku-subrow small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sku-subrow small {
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -1342,7 +1454,8 @@ select:focus {
   }
 
   .product-table-head,
-  .product-row {
+  .product-row,
+  .product-group {
     width: 860px;
   }
 }

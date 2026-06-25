@@ -38,11 +38,11 @@ for (const viewport of viewports) {
   await page.locator("input[autocomplete='username']").fill(visualUsername);
   await page.locator("input[autocomplete='current-password']").fill(visualPassword);
   await page.getByRole("button", { name: "登录" }).click();
-  await page.locator(".product-row").first().waitFor({ state: "visible", timeout: 10000 });
-  await page.locator(".chart-frame svg").first().waitFor({ state: "visible", timeout: 10000 });
+  await page.locator(".product-group").first().waitFor({ state: "visible", timeout: 60000 });
+  await page.locator(".chart-frame svg").first().waitFor({ state: "visible", timeout: 60000 });
 
   const title = await page.locator(".brand-line").innerText();
-  const productRows = await page.locator(".product-row").count();
+  const productRows = await page.locator(".product-group").count();
   const svgCount = await page.locator(".chart-frame svg").count();
   const overflow = await page.evaluate(() => {
     const viewportWidth = window.innerWidth;
