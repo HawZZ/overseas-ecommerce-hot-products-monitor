@@ -1083,7 +1083,12 @@ function buildOpportunityPools(products) {
       };
     })
     .sort((a, b) => b.priorityScore - a.priorityScore)
-    .slice(0, 18);
+    .reduce((acc, pool) => {
+      const regionCount = acc.filter(p => p.regionId === pool.regionId).length;
+      if (regionCount < 3 || acc.length < 32) acc.push(pool);
+      return acc;
+    }, [])
+    .sort((a, b) => b.priorityScore - a.priorityScore);
 }
 
 function buildRegionalSummary(platformSources, products) {
