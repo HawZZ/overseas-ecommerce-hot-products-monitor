@@ -39,10 +39,12 @@ for (const viewport of viewports) {
   await page.locator("input[autocomplete='current-password']").fill(visualPassword);
   await page.getByRole("button", { name: "登录" }).click();
   await page.locator(".product-group").first().waitFor({ state: "visible", timeout: 60000 });
+  await page.locator(".sourcing-link").first().waitFor({ state: "visible", timeout: 60000 });
   await page.locator(".chart-frame svg").first().waitFor({ state: "visible", timeout: 60000 });
 
   const title = await page.locator(".brand-line").innerText();
   const productRows = await page.locator(".product-group").count();
+  const sourcingLinks = await page.locator(".sourcing-link").count();
   const svgCount = await page.locator(".chart-frame svg").count();
   const overflow = await page.evaluate(() => {
     const viewportWidth = window.innerWidth;
@@ -60,6 +62,7 @@ for (const viewport of viewports) {
     viewport,
     title,
     productRows,
+    sourcingLinks,
     svgCount,
     overflow,
     errors,
@@ -71,7 +74,7 @@ await browser.close();
 
 console.log(JSON.stringify(results, null, 2));
 
-const failed = results.some((result) => result.productRows < 1 || result.svgCount < 1 || result.overflow || result.errors.length > 0);
+const failed = results.some((result) => result.productRows < 1 || result.sourcingLinks < 1 || result.svgCount < 1 || result.overflow || result.errors.length > 0);
 if (failed) {
   process.exit(1);
 }

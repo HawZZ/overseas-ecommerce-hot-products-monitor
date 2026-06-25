@@ -224,6 +224,130 @@ const categoryPool = [
 
 const productQualifiers = ["轻量款", "升级款", "跨境款", "家庭装", "便携款", "高复购款", "礼品款", "低退货款", "达人同款", "利润款"];
 
+const sourcingKeywords = {
+  "磁吸理线扣": { zh: "磁吸理线扣", en: "magnetic cable clip" },
+  "防摔手机壳": { zh: "防摔手机壳", en: "shockproof phone case" },
+  "快充数据线": { zh: "快充数据线", en: "fast charging cable" },
+  "镜头保护贴": { zh: "镜头保护贴", en: "camera lens protector" },
+  "折叠手机支架": { zh: "折叠手机支架", en: "foldable phone stand" },
+  "旅行化妆刷": { zh: "旅行化妆刷", en: "travel makeup brush" },
+  "卷发定型梳": { zh: "卷发定型梳", en: "hair styling brush" },
+  "补水面膜套装": { zh: "补水面膜套装", en: "hydrating facial mask set" },
+  "睫毛夹套装": { zh: "睫毛夹套装", en: "eyelash curler set" },
+  "便携喷雾仪": { zh: "便携喷雾仪", en: "portable facial sprayer" },
+  "抽屉分隔盒": { zh: "抽屉分隔盒", en: "drawer organizer" },
+  "厨房沥水架": { zh: "厨房沥水架", en: "dish drying rack" },
+  "真空压缩袋": { zh: "真空压缩袋", en: "vacuum storage bag" },
+  "可叠加鞋盒": { zh: "可叠加鞋盒", en: "stackable shoe box" },
+  "旋转调料架": { zh: "旋转调料架", en: "rotating spice rack" },
+  "宠物除毛刷": { zh: "宠物除毛刷", en: "pet grooming brush" },
+  "自动饮水器": { zh: "自动饮水器", en: "automatic pet water fountain" },
+  "慢食宠物碗": { zh: "慢食宠物碗", en: "slow feeder pet bowl" },
+  "发光牵引绳": { zh: "发光牵引绳", en: "led dog leash" },
+  "猫砂垫": { zh: "猫砂垫", en: "cat litter mat" },
+  "阻力训练带": { zh: "阻力训练带", en: "resistance band set" },
+  "速干运动毛巾": { zh: "速干运动毛巾", en: "quick dry sports towel" },
+  "骑行手机包": { zh: "骑行手机包", en: "bicycle phone bag" },
+  "折叠露营灯": { zh: "折叠露营灯", en: "folding camping lantern" },
+  "按摩筋膜球": { zh: "按摩筋膜球", en: "massage ball" },
+  "蓝牙追踪器": { zh: "蓝牙追踪器", en: "bluetooth tracker" },
+  "迷你投影仪": { zh: "迷你投影仪", en: "mini projector" },
+  "无线充电座": { zh: "无线充电座", en: "wireless charging stand" },
+  "降噪耳机": { zh: "降噪耳机", en: "noise cancelling earbuds" },
+  "便携显示屏": { zh: "便携显示屏", en: "portable monitor" },
+  "迷你封口机": { zh: "迷你封口机", en: "mini heat sealer" },
+  "便携榨汁杯": { zh: "便携榨汁杯", en: "portable blender" },
+  "除螨吸尘器": { zh: "除螨吸尘器", en: "mite vacuum cleaner" },
+  "旅行电热杯": { zh: "旅行电热杯", en: "travel electric kettle" },
+  "桌面空气循环扇": { zh: "桌面空气循环扇", en: "desktop air circulator" }
+};
+
+const sourcingPlatformTemplates = {
+  "1688": {
+    id: "1688",
+    name: "1688",
+    sourcingRegionId: "china-mainland",
+    sourcingRegionName: "中国大陆",
+    businessType: "内贸工厂/档口",
+    url: ({ zh }) => `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(zh)}`
+  },
+  "alibaba-cn": {
+    id: "alibaba-cn",
+    name: "Alibaba.com",
+    sourcingRegionId: "china-mainland",
+    sourcingRegionName: "中国大陆",
+    businessType: "外贸工厂/贸易商",
+    countryCode: "CN",
+    url: ({ slug }) => `https://www.alibaba.com/countrysearch/CN/${slug}.html`
+  },
+  "made-in-china": {
+    id: "made-in-china",
+    name: "Made-in-China",
+    sourcingRegionId: "china-mainland",
+    sourcingRegionName: "中国大陆",
+    businessType: "外贸工厂/认证供应商",
+    url: ({ titleSlug }) => `https://www.made-in-china.com/products-search/hot-china-products/${titleSlug}.html`
+  },
+  "global-sources-cn": {
+    id: "global-sources-cn",
+    name: "Global Sources",
+    sourcingRegionId: "china-mainland",
+    sourcingRegionName: "中国大陆",
+    businessType: "出口工厂/展会供应商",
+    url: ({ slug }) => `https://www.globalsources.com/china-suppliers/${slug}.htm`
+  },
+  "alibaba-vn": {
+    id: "alibaba-vn",
+    name: "Alibaba.com",
+    sourcingRegionId: "vietnam",
+    sourcingRegionName: "越南",
+    businessType: "区域替代供应",
+    countryCode: "VN",
+    url: ({ slug }) => `https://www.alibaba.com/countrysearch/VN/${slug}.html`
+  },
+  "indiamart": {
+    id: "indiamart",
+    name: "IndiaMART",
+    sourcingRegionId: "india",
+    sourcingRegionName: "印度",
+    businessType: "区域替代供应",
+    url: ({ en }) => `https://dir.indiamart.com/search.mp?ss=${encodeURIComponent(en)}`
+  },
+  "alibaba-in": {
+    id: "alibaba-in",
+    name: "Alibaba.com",
+    sourcingRegionId: "india",
+    sourcingRegionName: "印度",
+    businessType: "外贸供应商",
+    countryCode: "IN",
+    url: ({ slug }) => `https://www.alibaba.com/countrysearch/IN/${slug}.html`
+  },
+  "alibaba-tr": {
+    id: "alibaba-tr",
+    name: "Alibaba.com",
+    sourcingRegionId: "turkey",
+    sourcingRegionName: "土耳其",
+    businessType: "欧洲近岸替代",
+    countryCode: "TR",
+    url: ({ slug }) => `https://www.alibaba.com/countrysearch/TR/${slug}.html`
+  },
+  "thomasnet": {
+    id: "thomasnet",
+    name: "Thomasnet",
+    sourcingRegionId: "north-america",
+    sourcingRegionName: "北美",
+    businessType: "本地批发/制造",
+    url: ({ en }) => `https://www.thomasnet.com/search.html?what=${encodeURIComponent(en)}`
+  }
+};
+
+const sourcingPlatformByTargetRegion = {
+  sea: ["1688", "alibaba-cn", "made-in-china", "global-sources-cn", "alibaba-vn", "indiamart"],
+  "north-america": ["1688", "alibaba-cn", "made-in-china", "global-sources-cn", "alibaba-in", "thomasnet"],
+  "western-europe": ["1688", "alibaba-cn", "made-in-china", "global-sources-cn", "alibaba-tr", "alibaba-in"],
+  africa: ["1688", "alibaba-cn", "made-in-china", "global-sources-cn", "indiamart", "alibaba-tr"]
+};
+
 function hashString(input) {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
@@ -251,6 +375,101 @@ function clamp(value, min, max) {
 function round(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+function slugifyKeyword(keyword) {
+  return keyword
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+}
+
+function titleSlugKeyword(keyword) {
+  return keyword
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join("_");
+}
+
+function inferBaseItem(title, category) {
+  return category.items.find((item) => title.includes(item)) || category.items[0];
+}
+
+function sourceFitScore({ platform, product, pool }) {
+  const chinaBoost = platform.sourcingRegionId === "china-mainland" ? 9 : 0;
+  const nearshoreBoost = (
+    (pool.regionId === "western-europe" && platform.sourcingRegionId === "turkey")
+    || (pool.regionId === "sea" && platform.sourcingRegionId === "vietnam")
+    || (pool.regionId === "north-america" && platform.sourcingRegionId === "north-america")
+    || (pool.regionId === "africa" && ["india", "turkey"].includes(platform.sourcingRegionId))
+  ) ? 6 : 0;
+  const marginScore = clamp(product.pricing.grossMarginRate * 24, 0, 12);
+  const demandScore = clamp(product.opportunityScore / 8, 0, 12);
+
+  return round(58 + chinaBoost + nearshoreBoost + marginScore + demandScore, 1);
+}
+
+function moqBandForTier(priceTierId) {
+  if (["0-5", "5-15"].includes(priceTierId)) return "轻小件 200-1000件";
+  if (["15-30", "30-50"].includes(priceTierId)) return "中客单 100-500件";
+  return "高客单 20-200件";
+}
+
+function logisticsFitForTier(priceTierId) {
+  if (["0-5", "5-15"].includes(priceTierId)) return "适合小包直邮/平台仓测试";
+  if (["15-30", "30-50"].includes(priceTierId)) return "先小批量空运，再评估海外仓";
+  return "优先样品质检和认证，再做本地仓";
+}
+
+function buildSourcingReferences(pool, topProducts) {
+  const category = categoryPool.find((entry) => entry.id === pool.categoryId);
+  const platformIds = sourcingPlatformByTargetRegion[pool.regionId] || sourcingPlatformByTargetRegion.sea;
+
+  return topProducts
+    .slice(0, 5)
+    .flatMap((product) => {
+      const baseItem = inferBaseItem(product.title, category);
+      const keyword = sourcingKeywords[baseItem] || { zh: baseItem, en: baseItem };
+      const slug = slugifyKeyword(keyword.en);
+      const titleSlug = titleSlugKeyword(keyword.en);
+
+      return platformIds.map((platformId) => {
+        const platform = sourcingPlatformTemplates[platformId];
+        const matchScore = sourceFitScore({ platform, product, pool });
+        return {
+          id: `${pool.id}:${product.id}:${platform.id}`,
+          productName: baseItem,
+          searchKeyword: keyword.en,
+          localKeyword: keyword.zh,
+          targetRegionId: pool.regionId,
+          targetRegionName: pool.regionName,
+          categoryId: pool.categoryId,
+          categoryName: pool.categoryName,
+          priceTierId: product.priceTierId,
+          priceTierLabel: product.priceTierLabel,
+          sourcingRegionId: platform.sourcingRegionId,
+          sourcingRegionName: platform.sourcingRegionName,
+          platformId: platform.id,
+          platformName: platform.name,
+          businessType: platform.businessType,
+          moqBand: moqBandForTier(product.priceTierId),
+          logisticsFit: logisticsFitForTier(product.priceTierId),
+          matchScore,
+          url: platform.url({ zh: keyword.zh, en: keyword.en, slug, titleSlug }),
+          conditionTags: [
+            pool.regionName,
+            pool.categoryName,
+            product.priceTierLabel,
+            platform.sourcingRegionName,
+            platform.name
+          ],
+          complianceTags: [pool.complianceFocus, category.compliance].filter(Boolean).slice(0, 2)
+        };
+      });
+    })
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, 20);
 }
 
 function isoDateDaysAgo(daysAgo) {
@@ -859,7 +1078,8 @@ function buildOpportunityPools(products) {
         leadingPlatforms: [...new Set(top.slice(0, 5).map((product) => product.platformName))],
         assumptions: ["市场规模为监控模型估算，需要用平台GMV、广告词和店铺转化数据校准。", "SOM按1-3年可获得份额估算，不代表承诺营收。"],
         risks: competitiveIntensity > 0.7 ? ["价格竞争强", "需要更强本地化卖点"] : ["需验证物流成本", "需验证评论关键词"],
-        recommendedAction: priorityScore >= 78 ? "进入SKU筛选和打样排期。" : "补充搜索词、评价和广告成本数据后再决策。"
+        recommendedAction: priorityScore >= 78 ? "进入SKU筛选和打样排期。" : "补充搜索词、评价和广告成本数据后再决策。",
+        sourcingReferences: buildSourcingReferences(pool, top)
       };
     })
     .sort((a, b) => b.priorityScore - a.priorityScore)

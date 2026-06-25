@@ -823,7 +823,47 @@ function WorkflowRail({ steps }) {
 }
 
 function OpportunityPools({ snapshot }) {
-  const pools = snapshot.opportunityPools || [];
+  const pools = useMemo(() => snapshot.opportunityPools || [], [snapshot.opportunityPools]);
+  const [sourcingRegionId, setSourcingRegionId] = useState("all");
+  const [sourcingPlatformId, setSourcingPlatformId] = useState("all");
+  const [targetRegionId, setTargetRegionId] = useState("all");
+  const [sourcingCategoryId, setSourcingCategoryId] = useState("all");
+  const [sourcingTierId, setSourcingTierId] = useState("all");
+  const [sourcingQuery, setSourcingQuery] = useState("");
+  const sourcingReferences = useMemo(() => (
+    pools.flatMap((pool) => (pool.sourcingReferences || []).map((reference) => ({
+      ...reference,
+      poolPriority: pool.priority,
+      priorityScore: pool.priorityScore
+    })))
+  ), [pools]);
+  const sourcingOptions = useMemo(() => {
+    const optionList = (getter) => [...new Map(sourcingReferences.map(getter).filter(([id]) => id)).entries()];
+    return {
+      targetRegions: optionList((reference) => [reference.targetRegionId, reference.targetRegionName]),
+      categories: optionList((reference) => [reference.categoryId, reference.categoryName]),
+      priceTiers: optionList((reference) => [reference.priceTierId, reference.priceTierLabel]),
+      sourcingRegions: optionList((reference) => [reference.sourcingRegionId, reference.sourcingRegionName]),
+      platforms: optionList((reference) => [reference.platformId, reference.platformName])
+    };
+  }, [sourcingReferences]);
+  const filteredSourcingReferences = useMemo(() => (
+    sourcingReferences
+      .filter((reference) => targetRegionId === "all" || reference.targetRegionId === targetRegionId)
+      .filter((reference) => sourcingCategoryId === "all" || reference.categoryId === sourcingCategoryId)
+      .filter((reference) => sourcingTierId === "all" || reference.priceTierId === sourcingTierId)
+      .filter((reference) => sourcingRegionId === "all" || reference.sourcingRegionId === sourcingRegionId)
+      .filter((reference) => sourcingPlatformId === "all" || reference.platformId === sourcingPlatformId)
+      .filter((reference) => {
+        const query = sourcingQuery.trim().toLowerCase();
+        if (!query) return true;
+        const text = `${reference.productName} ${reference.searchKeyword} ${reference.localKeyword} ${reference.categoryName} ${reference.platformName} ${reference.sourcingRegionName}`.toLowerCase();
+        return text.includes(query);
+      })
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 12)
+  ), [sourcingReferences, targetRegionId, sourcingCategoryId, sourcingTierId, sourcingRegionId, sourcingPlatformId, sourcingQuery]);
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -856,6 +896,88 @@ function OpportunityPools({ snapshot }) {
             </div>
           </article>
         ))}
+      </div>
+      <div className="sourcing-panel">
+        <div className="sourcing-head">
+          <div>
+            <h3>寻源参考</h3>
+            <p>按机会池、价格带、寻源区域和平台生成商品搜索入口。</p>
+          </div>
+          <span>{filteredSourcingReferences.length}/{sourcingReferences.length} 条</span>
+        </div>
+        <div className="sourcing-filters">
+          <label>
+            目标区域
+            <select value={targetRegionId} onChange={(event) => setTargetRegionId(event.target.value)}>
+              <option value="all">全部目标区域</option>
+              {sourcingOptions.targetRegions.map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            品类
+            <select value={sourcingCategoryId} onChange={(event) => setSourcingCategoryId(event.target.value)}>
+              <option value="all">全部品类</option>
+              {sourcingOptions.categories.map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            价格带
+            <select value={sourcingTierId} onChange={(event) => setSourcingTierId(event.target.value)}>
+              <option value="all">全部价格带</option>
+              {sourcingOptions.priceTiers.map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            寻源区域
+            <select value={sourcingRegionId} onChange={(event) => setSourcingRegionId(event.target.value)}>
+              <option value="all">全部寻源区域</option>
+              {sourcingOptions.sourcingRegions.map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            平台
+            <select value={sourcingPlatformId} onChange={(event) => setSourcingPlatformId(event.target.value)}>
+              <option value="all">全部平台</option>
+              {sourcingOptions.platforms.map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="wide-filter">
+            关键词
+            <span className="search-box">
+              <MagnifyingGlass size={15} weight="bold" />
+              <input value={sourcingQuery} onChange={(event) => setSourcingQuery(event.target.value)} placeholder="商品、平台、寻源区域" />
+            </span>
+          </label>
+        </div>
+        <div className="sourcing-list">
+          {filteredSourcingReferences.length === 0 ? (
+            <div className="empty-state">没有符合筛选条件的寻源参考。</div>
+          ) : filteredSourcingReferences.map((reference) => (
+            <a className="sourcing-link" href={reference.url} key={reference.id} target="_blank" rel="noreferrer">
+              <div>
+                <strong>{reference.productName}</strong>
+                <span>{reference.platformName} / {reference.sourcingRegionName} / {reference.priceTierLabel}</span>
+              </div>
+              <div className="sourcing-link-meta">
+                <span>{reference.targetRegionName}</span>
+                <span>{reference.categoryName}</span>
+                <span>{reference.moqBand}</span>
+                <span>{reference.logisticsFit}</span>
+              </div>
+              <em>{reference.matchScore}</em>
+            </a>
+          ))}
+        </div>
       </div>
     </section>
   );

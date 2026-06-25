@@ -22,7 +22,8 @@
 - `metricsFramework`：North Star、输入指标、健康指标、业务指标、定义、来源、目标和告警阈值。
 - `alerts`：需要运营、供应链、产品或数据处理的告警队列。
 - `marketSegments`：买家细分、JTBD、痛点、收益和适配说明。
-- `opportunityPools`：区域/品类机会池，包含 TAM、SAM、SOM、增长率、竞争强度和推荐动作。
+- `opportunityPools`：区域/品类机会池，包含 TAM、SAM、SOM、增长率、竞争强度、推荐动作和 `sourcingReferences` 寻源参考。
+- `sourcingReferences`：面向机会池的商品搜索入口，包含目标区域、品类、价格带、寻源区域、寻源平台、MOQ 区间、物流适配、匹配分和平台搜索链接。默认覆盖中国大陆寻源，并按目标区域补充越南、印度、土耳其、北美等替代区域。
 - `priceTiers`：0-5、5-15、15-30、30-50、50-70、70-100、100-200 美元。
 - `tierRanks`：每个价格带 Top10 商品。
 - `rankGroups`：持久化分组 Top10，包含价格带、区域、区域+平台、区域+平台+价格带、品类等维度。每个榜单商品保留 90 天趋势、summary、pricing、sentiment、cohort 和 dataLineage。

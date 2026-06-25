@@ -64,4 +64,14 @@ assert(snapshot.workflowSteps?.length === 5, "PM workflow must have 5 steps");
 assert(snapshot.strategyCanvas?.sections?.length === 9, "strategy canvas must have 9 sections");
 assert(snapshot.gtmPlaybook?.roadmap90Days?.length === 3, "GTM playbook must have 90 day roadmap");
 
+assert(snapshot.opportunityPools?.every((pool) => Array.isArray(pool.sourcingReferences) && pool.sourcingReferences.length > 0), "opportunityPools must include sourcingReferences");
+assert(snapshot.opportunityPools?.every((pool) => pool.sourcingReferences.some((reference) => reference.sourcingRegionName === "中国大陆")), "every opportunity pool must include China mainland sourcing");
+for (const pool of snapshot.opportunityPools) {
+  for (const reference of pool.sourcingReferences) {
+    assert(reference.platformId && reference.platformName, `${pool.id} sourcing reference missing platform`);
+    assert(reference.url && reference.url.startsWith("http"), `${pool.id} sourcing reference missing url`);
+    assert(reference.targetRegionName && reference.sourcingRegionName, `${pool.id} sourcing reference missing region`);
+  }
+}
+
 console.log("Snapshot verification passed");
