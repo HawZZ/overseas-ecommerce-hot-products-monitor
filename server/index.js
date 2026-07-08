@@ -278,6 +278,20 @@ app.post("/api/refresh", requireSession, async (_req, res, next) => {
   }
 });
 
+// ── Serve frontend static files from dist/ ──────────────────────────
+const distDir = path.resolve(rootDir, "dist");
+
+app.use(express.static(distDir, { index: false, fallthrough: true }));
+
+// SPA catch-all: return index.html for any non-API GET request
+app.get("*", (req, res, next) => {
+  // Skip API routes, health, and non-GET methods already handled
+  if (req.path.startsWith("/api/") || req.path === "/health") return next();
+  res.sendFile(path.join(distDir, "index.html"), (err) => {
+    if (err) next();
+  });
+});
+
 app.use((error, _req, res, _next) => {
   console.error(error);
   res.status(500).json({
