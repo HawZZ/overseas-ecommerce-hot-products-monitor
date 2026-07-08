@@ -1306,11 +1306,12 @@ function FourPWorkbench({ product, strategyCanvas, gtmPlaybook }) {
     );
   }
 
+  const p4p = product.product4p || {};
   const cards = [
-    { key: "product", title: "Product", icon: Package, items: product.product4p.product },
-    { key: "price", title: "Price", icon: Tag, items: product.product4p.price },
-    { key: "place", title: "Place", icon: ShoppingCart, items: product.product4p.place },
-    { key: "promotion", title: "Promotion", icon: ChartLineUp, items: product.product4p.promotion }
+    { key: "product", title: "Product", icon: Package, items: p4p.product || [] },
+    { key: "price", title: "Price", icon: Tag, items: p4p.price || [] },
+    { key: "place", title: "Place", icon: ShoppingCart, items: p4p.place || [] },
+    { key: "promotion", title: "Promotion", icon: ChartLineUp, items: p4p.promotion || [] }
   ];
 
   return (
