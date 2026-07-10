@@ -3,13 +3,16 @@ import { createRoot } from "react-dom/client";
 import {
   ArrowClockwise,
   BellRinging,
+  ChartBar,
   ChartLineUp,
   CaretDown,
   CaretRight,
   CheckCircle,
   Database,
+  FloppyDisk,
   Funnel,
   GlobeHemisphereEast,
+  LinkSimple,
   ListChecks,
   LockKey,
   MagnifyingGlass,
@@ -17,7 +20,9 @@ import {
   Package,
   Path,
   Plug,
+  Scales,
   ShieldCheck,
+  ShieldWarning,
   ShoppingCart,
   Sparkle,
   Tag,
@@ -130,7 +135,16 @@ function formatTrend(value, suffix = "%") {
 }
 
 function formatUsdM(value) {
+  if (value == null || Number.isNaN(Number(value))) return "待接入";
   return `$${formatNumber(Number(value) || 0)}M`;
+}
+
+function marketLabel(product) {
+  return [product?.regionName, product?.countryName].filter(Boolean).join(" / ") || "未指定市场";
+}
+
+function getDefaultCountryId(region) {
+  return region?.countries?.find((country) => country.default)?.id || region?.countries?.[0]?.id || "all";
 }
 
 function stageLabel(stage) {
@@ -191,6 +205,7 @@ function buildSkuGroups(products) {
       const representative = variants[0];
       const platformNames = [...new Set(variants.map((product) => product.platformName).filter(Boolean))];
       const regionNames = [...new Set(variants.map((product) => product.regionName).filter(Boolean))];
+      const countryNames = [...new Set(variants.map((product) => product.countryName).filter(Boolean))];
       const sales90d = variants.reduce((sum, product) => sum + (Number(product.summary?.sales90d) || 0), 0);
       const search90d = variants.reduce((sum, product) => sum + (Number(product.summary?.search90d) || 0), 0);
       const stage = variants.reduce((best, product) => (
@@ -204,8 +219,10 @@ function buildSkuGroups(products) {
         variantCount: variants.length,
         platformCount: platformNames.length,
         regionCount: regionNames.length,
+        countryCount: countryNames.length,
         platformNames,
         regionNames,
+        countryNames,
         title: representative.title,
         categoryName: representative.categoryName,
         priceTierLabel: representative.priceTierLabel,
@@ -257,6 +274,10 @@ async function loadApiSnapshot(apiUrl, sessionToken) {
     throw new Error(response.status === 401 ? "登录已过期，请重新登录" : `后端 API 返回 ${response.status}`);
   }
   return response.json();
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function useSnapshot() {
@@ -433,6 +454,59 @@ function useSnapshot() {
     }
   }
 
+  async function loadConnectors() {
+    if (!sessionToken) throw new Error("请先登录后再读取API配置");
+    const { response } = await requestWithFallback("/api/connectors", { token: sessionToken });
+    if (!response.ok) throw new Error(`读取API配置返回 ${response.status}`);
+    return response.json();
+  }
+
+  async function saveConnectors(connectors) {
+    if (!sessionToken) throw new Error("请先登录后再保存API配置");
+    setStatus({ state: "loading", message: "正在保存API配置" });
+    const { response, baseUrl } = await requestWithFallback("/api/connectors", {
+      method: "POST",
+      token: sessionToken,
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ connectors })
+    });
+    if (!response.ok) {
+      throw new Error(`保存API配置返回 ${response.status}`);
+    }
+    const result = await response.json();
+    setApiUrlState(baseUrl);
+    setStatus({ state: "ready", message: "API配置已保存，刷新已提交" });
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await delay(1200);
+      try {
+        const data = await loadApiSnapshot(baseUrl, sessionToken);
+        setSnapshot(data);
+        break;
+      } catch {
+        // Refresh may still be running; keep the saved status visible.
+      }
+    }
+
+    return result;
+  }
+
+  async function analyzeRisk(payload) {
+    if (!sessionToken) throw new Error("请先登录后再分析风险");
+    const { response } = await requestWithFallback("/api/risk/analyze", {
+      method: "POST",
+      token: sessionToken,
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`风险分析返回 ${response.status}`);
+    return response.json();
+  }
+
   return {
     snapshot,
     source,
@@ -449,7 +523,10 @@ function useSnapshot() {
     setPassword,
     login,
     logout,
-    refresh
+    refresh,
+    loadConnectors,
+    saveConnectors,
+    analyzeRisk
   };
 }
 
@@ -470,31 +547,57 @@ function App() {
     setPassword,
     login,
     logout,
-    refresh
+    refresh,
+    loadConnectors,
+    saveConnectors,
+    analyzeRisk
   } = useSnapshot();
+  const [activePage, setActivePage] = useState("trends");
   const [regionId, setRegionId] = useState("all");
+  const [countryId, setCountryId] = useState("all");
   const [categoryId, setCategoryId] = useState("all");
   const [tierId, setTierId] = useState("all");
   const [stage, setStage] = useState("all");
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [query, setQuery] = useState("");
 
+  useEffect(() => {
+    if (!snapshot || regionId !== "all") return;
+    const seaRegion = snapshot.regions?.find((region) => region.id === "sea");
+    if (seaRegion) {
+      setRegionId("sea");
+      setCountryId(getDefaultCountryId(seaRegion));
+    }
+  }, [snapshot, regionId]);
+
+  useEffect(() => {
+    if (!snapshot || regionId === "all") return;
+    const region = snapshot.regions?.find((entry) => entry.id === regionId);
+    if (!region?.countries?.length) {
+      setCountryId("all");
+      return;
+    }
+    if (countryId === "all" || region.countries.some((country) => country.id === countryId)) return;
+    setCountryId(getDefaultCountryId(region));
+  }, [snapshot, regionId, countryId]);
+
   const products = useMemo(() => {
     if (!snapshot) return [];
     const shortlist = collectSnapshotProducts(snapshot);
     return shortlist
       .filter((product) => regionId === "all" || product.regionId === regionId)
+      .filter((product) => countryId === "all" || product.countryId === countryId)
       .filter((product) => categoryId === "all" || product.categoryId === categoryId)
       .filter((product) => tierId === "all" || product.priceTierId === tierId)
       .filter((product) => stage === "all" || product.stage === stage)
       .filter((product) => {
         if (!query.trim()) return true;
-        const text = `${product.title} ${product.categoryName} ${product.platformName} ${product.regionName} ${product.priceTierLabel}`.toLowerCase();
+        const text = `${product.title} ${product.categoryName} ${product.platformName} ${product.regionName} ${product.countryName} ${product.priceTierLabel}`.toLowerCase();
         return text.includes(query.trim().toLowerCase());
       })
       .sort((a, b) => b.opportunityScore - a.opportunityScore)
       .map((product, index) => ({ ...product, rank: index + 1 }));
-  }, [snapshot, regionId, categoryId, tierId, stage, query]);
+  }, [snapshot, regionId, countryId, categoryId, tierId, stage, query]);
 
   const selectedProduct = useMemo(() => {
     if (!snapshot) return null;
@@ -526,6 +629,8 @@ function App() {
   }
 
   const categories = snapshot.wikiSignals || [];
+  const selectedRegion = snapshot.regions?.find((region) => region.id === regionId);
+  const selectedCountry = selectedRegion?.countries?.find((country) => country.id === countryId);
 
   return (
     <div className="app-shell">
@@ -541,123 +646,558 @@ function App() {
       </header>
 
       <main>
-        <section className="control-panel" aria-label="连接与筛选">
-          <div className="api-card">
-            <div className="section-title">
-              <Plug size={18} weight="duotone" />
-              <span>后端连接</span>
-            </div>
-            <div className="api-grid">
-              <label>
-                API 地址
-                <input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} />
-              </label>
-              <label>
-                登录会话
-                <input
-                  type="password"
-                  value={sessionToken ? "已登录，会话保存在当前标签页" : ""}
-                  readOnly
-                  placeholder="登录后自动生成"
-                />
-              </label>
-              <button className="primary-button" onClick={refresh} type="button">
-                <ArrowClockwise size={16} weight="bold" />
-                刷新
-              </button>
-              <button className="secondary-button" onClick={logout} type="button">
-                <LockKey size={16} weight="bold" />
-                退出
-              </button>
-            </div>
-          </div>
+        <ConnectionPanel
+          apiUrl={apiUrl}
+          sessionToken={sessionToken}
+          setApiUrl={setApiUrl}
+          refresh={refresh}
+          logout={logout}
+        />
+        <PageTabs activePage={activePage} onChange={setActivePage} />
 
-          <div className="filter-card">
-            <div className="section-title">
-              <Funnel size={18} weight="duotone" />
-              <span>工作台筛选</span>
-            </div>
-            <div className="filter-grid">
-              <label>
-                区域
-                <select value={regionId} onChange={(event) => setRegionId(event.target.value)}>
-                  <option value="all">全部区域</option>
-                  {snapshot.regions.map((region) => (
-                    <option key={region.id} value={region.id}>{region.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                品类
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-                  <option value="all">全部品类</option>
-                  {categories.map((category) => (
-                    <option key={category.categoryId} value={category.categoryId}>{category.categoryName}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                价格带
-                <select value={tierId} onChange={(event) => setTierId(event.target.value)}>
-                  <option value="all">全部价格带</option>
-                  {snapshot.priceTiers.map((tier) => (
-                    <option key={tier.id} value={tier.id}>{tier.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                阶段
-                <select value={stage} onChange={(event) => setStage(event.target.value)}>
-                  <option value="all">全部阶段</option>
-                  <option value="scale">放量</option>
-                  <option value="test">测试</option>
-                  <option value="watch">观察</option>
-                  <option value="fix-margin">修毛利</option>
-                </select>
-              </label>
-              <label className="wide-filter">
-                搜索
-                <span className="search-box">
-                  <MagnifyingGlass size={15} weight="bold" />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SKU、品类、平台、区域" />
-                </span>
-              </label>
-            </div>
-          </div>
-        </section>
+        {activePage === "trends" && (
+          <TrendsPage
+            snapshot={snapshot}
+            products={products}
+            selectedProduct={selectedProduct}
+            selectedProductId={selectedProduct?.id}
+            onSelectProduct={setSelectedProductId}
+            filters={{ regionId, countryId, categoryId, tierId, stage, query }}
+            filterSetters={{ setRegionId, setCountryId, setCategoryId, setTierId, setStage, setQuery }}
+            categories={categories}
+          />
+        )}
 
-        <MetricsCommandCenter snapshot={snapshot} />
-        <DataQualityBanner snapshot={snapshot} />
-        <WorkflowRail steps={snapshot.workflowSteps || []} />
+        {activePage === "regional" && (
+          <RegionalCategoryPage
+            snapshot={snapshot}
+            products={products}
+            selectedProduct={selectedProduct}
+            selectedProductId={selectedProduct?.id}
+            onSelectProduct={setSelectedProductId}
+            filters={{ regionId, countryId, categoryId, tierId, stage, query }}
+            filterSetters={{ setRegionId, setCountryId, setCategoryId, setTierId, setStage, setQuery }}
+            categories={categories}
+            selectedRegion={selectedRegion}
+            selectedCountry={selectedCountry}
+            analyzeRisk={analyzeRisk}
+          />
+        )}
 
-        <section className="dashboard-grid">
-          <OpportunityPools snapshot={snapshot} />
-          <SkuScreening products={products} selectedProductId={selectedProduct?.id} onSelect={setSelectedProductId} />
-        </section>
+        {activePage === "fourp" && (
+          <FourPPage snapshot={snapshot} selectedProduct={selectedProduct} />
+        )}
 
-        <RankGroupsPanel snapshot={snapshot} />
-
-        <section className="detail-grid">
-          <ProductDetail product={selectedProduct} />
-          <FourPWorkbench product={selectedProduct} strategyCanvas={snapshot.strategyCanvas} gtmPlaybook={snapshot.gtmPlaybook} />
-        </section>
-
-        <section className="dashboard-grid">
-          <MarketSegments snapshot={snapshot} />
-          <PlatformCoverage snapshot={snapshot} />
-        </section>
-
-        <section className="detail-grid">
-          <WikiPanel snapshot={snapshot} />
-          <GtmPanel gtmPlaybook={snapshot.gtmPlaybook} />
-        </section>
-
-        <section className="source-section">
-          <SourcePanel snapshot={snapshot} />
-          <SecurityPanel snapshot={snapshot} />
-        </section>
+        {activePage === "api-risk" && (
+          <ApiRiskPage
+            snapshot={snapshot}
+            selectedProduct={selectedProduct}
+            loadConnectors={loadConnectors}
+            saveConnectors={saveConnectors}
+            analyzeRisk={analyzeRisk}
+          />
+        )}
       </main>
     </div>
+  );
+}
+
+function ConnectionPanel({ apiUrl, sessionToken, setApiUrl, refresh, logout }) {
+  return (
+    <section className="connection-strip" aria-label="后端连接">
+      <div className="section-title">
+        <Plug size={18} weight="duotone" />
+        <span>后端连接</span>
+      </div>
+      <div className="api-grid">
+        <label>
+          API 地址
+          <input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} />
+        </label>
+        <label>
+          登录会话
+          <input
+            type="password"
+            value={sessionToken ? "已登录，会话保存在当前标签页" : ""}
+            readOnly
+            placeholder="登录后自动生成"
+          />
+        </label>
+        <button className="primary-button" onClick={refresh} type="button">
+          <ArrowClockwise size={16} weight="bold" />
+          刷新
+        </button>
+        <button className="secondary-button" onClick={logout} type="button">
+          <LockKey size={16} weight="bold" />
+          退出
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PageTabs({ activePage, onChange }) {
+  const tabs = [
+    { id: "trends", label: "爆品趋势", icon: ChartBar },
+    { id: "regional", label: "区域品类", icon: MapTrifold },
+    { id: "fourp", label: "4P工作台", icon: Package },
+    { id: "api-risk", label: "风险/API", icon: ShieldWarning }
+  ];
+
+  return (
+    <nav className="page-tabs" aria-label="看板子页面">
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <button className={activePage === tab.id ? "active" : ""} key={tab.id} onClick={() => onChange(tab.id)} type="button">
+            <Icon size={17} weight="duotone" />
+            {tab.label}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function FilterPanel({ snapshot, filters, filterSetters, categories, title = "工作台筛选" }) {
+  const { regionId, countryId, categoryId, tierId, stage, query } = filters;
+  const { setRegionId, setCountryId, setCategoryId, setTierId, setStage, setQuery } = filterSetters;
+  const selectedRegion = snapshot.regions.find((region) => region.id === regionId);
+  const countryOptions = selectedRegion?.countries || [];
+
+  function handleRegionChange(event) {
+    const nextRegionId = event.target.value;
+    const nextRegion = snapshot.regions.find((region) => region.id === nextRegionId);
+    setRegionId(nextRegionId);
+    setCountryId(nextRegionId === "all" ? "all" : getDefaultCountryId(nextRegion));
+  }
+
+  return (
+    <section className="filter-card standalone-filter" aria-label={title}>
+      <div className="section-title">
+        <Funnel size={18} weight="duotone" />
+        <span>{title}</span>
+      </div>
+      <div className="filter-grid">
+        <label>
+          区域
+          <select value={regionId} onChange={handleRegionChange}>
+            <option value="all">全部区域</option>
+            {snapshot.regions.map((region) => (
+              <option key={region.id} value={region.id}>{region.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          国家/地区
+          <select value={countryId} onChange={(event) => setCountryId(event.target.value)} disabled={regionId === "all" || countryOptions.length === 0}>
+            <option value="all">全部国家/地区</option>
+            {countryOptions.map((country) => (
+              <option key={country.id} value={country.id}>{country.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          品类
+          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            <option value="all">全部品类</option>
+            {categories.map((category) => (
+              <option key={category.categoryId} value={category.categoryId}>{category.categoryName}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          价格带
+          <select value={tierId} onChange={(event) => setTierId(event.target.value)}>
+            <option value="all">全部价格带</option>
+            {snapshot.priceTiers.map((tier) => (
+              <option key={tier.id} value={tier.id}>{tier.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          阶段
+          <select value={stage} onChange={(event) => setStage(event.target.value)}>
+            <option value="all">全部阶段</option>
+            <option value="scale">放量</option>
+            <option value="test">测试</option>
+            <option value="watch">观察</option>
+            <option value="fix-margin">修毛利</option>
+          </select>
+        </label>
+        <label className="wide-filter">
+          搜索
+          <span className="search-box">
+            <MagnifyingGlass size={15} weight="bold" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SKU、品类、平台、区域、国家/地区" />
+          </span>
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function TrendsPage({ snapshot, products, selectedProduct, selectedProductId, onSelectProduct, filters, filterSetters, categories }) {
+  return (
+    <>
+      <MetricsCommandCenter snapshot={snapshot} />
+      <DataQualityBanner snapshot={snapshot} />
+      <FilterPanel snapshot={snapshot} filters={filters} filterSetters={filterSetters} categories={categories} title="爆品趋势筛选" />
+      <WorkflowRail steps={snapshot.workflowSteps || []} />
+      <section className="dashboard-grid">
+        <SkuScreening products={products} selectedProductId={selectedProductId} onSelect={onSelectProduct} />
+        <ProductDetail product={selectedProduct} />
+      </section>
+      <RankGroupsPanel snapshot={snapshot} />
+    </>
+  );
+}
+
+function RegionalCategoryPage({ snapshot, products, selectedProduct, selectedProductId, onSelectProduct, filters, filterSetters, categories, selectedRegion, selectedCountry, analyzeRisk }) {
+  return (
+    <>
+      <FilterPanel snapshot={snapshot} filters={filters} filterSetters={filterSetters} categories={categories} title="区域品类筛选" />
+      <section className="market-focus">
+        <div>
+          <strong>默认关注市场</strong>
+          <span>{selectedRegion?.name || "全部区域"} / {selectedCountry?.name || "全部国家/地区"}</span>
+        </div>
+        <p>没有真实SKU或市场规模数据的国家/地区会显示为空状态，等待API、卖家后台导出或第三方数据商接入。</p>
+      </section>
+      <section className="dashboard-grid">
+        <OpportunityPools snapshot={snapshot} filters={filters} />
+        <SkuScreening products={products} selectedProductId={selectedProductId} onSelect={onSelectProduct} />
+      </section>
+      <section className="detail-grid">
+        <RiskAnalysisPanel product={selectedProduct} snapshot={snapshot} analyzeRisk={analyzeRisk} />
+        <PlatformCoverage snapshot={snapshot} />
+      </section>
+      <MarketSegments snapshot={snapshot} />
+    </>
+  );
+}
+
+function FourPPage({ snapshot, selectedProduct }) {
+  return (
+    <>
+      <section className="detail-grid">
+        <ProductDetail product={selectedProduct} />
+        <FourPWorkbench product={selectedProduct} strategyCanvas={snapshot.strategyCanvas} gtmPlaybook={snapshot.gtmPlaybook} />
+      </section>
+      <section className="detail-grid">
+        <WikiPanel snapshot={snapshot} />
+        <GtmPanel gtmPlaybook={snapshot.gtmPlaybook} />
+      </section>
+    </>
+  );
+}
+
+function ApiRiskPage({ snapshot, selectedProduct, loadConnectors, saveConnectors, analyzeRisk }) {
+  return (
+    <>
+      <section className="dashboard-grid">
+        <ConnectorConfigPanel loadConnectors={loadConnectors} saveConnectors={saveConnectors} />
+        <RiskAnalysisPanel product={selectedProduct} snapshot={snapshot} analyzeRisk={analyzeRisk} />
+      </section>
+      <section className="source-section">
+        <SourcePanel snapshot={snapshot} />
+        <SecurityPanel snapshot={snapshot} />
+      </section>
+    </>
+  );
+}
+
+const connectorTemplates = [
+  {
+    id: "vendor-report-upload",
+    title: "卖家后台/数据商导入",
+    type: "csv-folder",
+    description: "订单、搜索、广告、评论、退货CSV/JSON导入目录。",
+    fields: [
+      { key: "path", label: "本机目录", placeholder: "./data/vendor-exports/normalized" },
+      { key: "notes", label: "备注", placeholder: "数据来源、刷新频率、授权范围" }
+    ]
+  },
+  {
+    id: "shopee-seller-api",
+    title: "Shopee Seller/Open API",
+    type: "marketplace-api",
+    description: "用于台湾、越南、泰国、新加坡等国家/地区的真实商品、订单、退货和店铺指标。",
+    fields: [
+      { key: "baseUrl", label: "API地址", placeholder: "https://partner.shopeemobile.com" },
+      { key: "clientId", label: "Client ID", placeholder: "本机保存" },
+      { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "只保存到本机后端" },
+      { key: "accessToken", label: "Access Token", secret: true, placeholder: "只保存到本机后端" }
+    ]
+  },
+  {
+    id: "lazada-seller-api",
+    title: "Lazada Seller API",
+    type: "marketplace-api",
+    description: "用于Lazada真实商品、订单和退货数据。",
+    fields: [
+      { key: "baseUrl", label: "API地址", placeholder: "https://api.lazada.com/rest" },
+      { key: "appKey", label: "App Key", placeholder: "本机保存" },
+      { key: "appSecret", label: "App Secret", secret: true, placeholder: "只保存到本机后端" },
+      { key: "accessToken", label: "Access Token", secret: true, placeholder: "只保存到本机后端" }
+    ]
+  },
+  {
+    id: "patent-trademark-risk",
+    title: "专利/商标/海关案例",
+    type: "risk-evidence-api",
+    description: "用于1688寻源商品在目标市场售卖前的侵权、扣押、下架证据链。",
+    fields: [
+      { key: "baseUrl", label: "证据源/API地址", placeholder: "专利/商标/海关案例数据源" },
+      { key: "apiKey", label: "API Key", secret: true, placeholder: "只保存到本机后端" },
+      { key: "notes", label: "覆盖市场", placeholder: "例如台湾、泰国、欧盟、美国" }
+    ]
+  },
+  {
+    id: "culture-policy-risk",
+    title: "文化/宗教/平台政策",
+    type: "risk-evidence-api",
+    description: "用于核验图案、颜色、文案、节日场景和禁忌内容。",
+    fields: [
+      { key: "baseUrl", label: "证据源/API地址", placeholder: "文化政策、平台政策或本地审核库" },
+      { key: "apiKey", label: "API Key", secret: true, placeholder: "只保存到本机后端" },
+      { key: "notes", label: "覆盖市场", placeholder: "宗教、习俗、平台政策范围" }
+    ]
+  },
+  {
+    id: "returns-fraud-risk",
+    title: "退货/空包/争议数据",
+    type: "risk-evidence-api",
+    description: "用于识别高退货、空包、拒付、争议和物流货损风险。",
+    fields: [
+      { key: "baseUrl", label: "证据源/API地址", placeholder: "退货/争议/物流数据源" },
+      { key: "apiKey", label: "API Key", secret: true, placeholder: "只保存到本机后端" },
+      { key: "notes", label: "证据范围", placeholder: "平台、物流商、国家/地区" }
+    ]
+  }
+];
+
+function initialConnectorState(existing = {}) {
+  return Object.fromEntries(connectorTemplates.map((template) => [
+    template.id,
+    {
+      enabled: false,
+      type: template.type,
+      notes: "",
+      ...(existing[template.id] || {})
+    }
+  ]));
+}
+
+function ConnectorConfigPanel({ loadConnectors, saveConnectors }) {
+  const [connectors, setConnectors] = useState(() => initialConnectorState());
+  const [status, setStatus] = useState({ state: "idle", message: "配置只保存在本机后端" });
+
+  useEffect(() => {
+    let mounted = true;
+    setStatus({ state: "loading", message: "读取本机API配置" });
+    loadConnectors()
+      .then((data) => {
+        if (!mounted) return;
+        setConnectors(initialConnectorState(data.connectors));
+        setStatus({ state: "ready", message: "已读取，密钥字段已打码" });
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setStatus({ state: "error", message: error.message });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [loadConnectors]);
+
+  function updateConnector(id, key, value) {
+    setConnectors((current) => ({
+      ...current,
+      [id]: {
+        ...(current[id] || {}),
+        [key]: value
+      }
+    }));
+  }
+
+  async function handleSave() {
+    setStatus({ state: "loading", message: "保存并触发刷新" });
+    try {
+      const result = await saveConnectors(connectors);
+      setConnectors(initialConnectorState(result.connectors));
+      setStatus({ state: "ready", message: "已保存，后端正在刷新相关数据" });
+    } catch (error) {
+      setStatus({ state: "error", message: error.message });
+    }
+  }
+
+  return (
+    <section className="panel connector-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>API配置</h2>
+          <p>访问者登录后可配置平台、风险证据和退货数据链路；保存到本机后端，不进入GitHub Pages。</p>
+        </div>
+        <span className={`connector-status ${status.state}`}>{status.message}</span>
+      </div>
+      <div className="connector-list">
+        {connectorTemplates.map((template) => {
+          const connector = connectors[template.id] || {};
+          return (
+            <article className="connector-card" key={template.id}>
+              <div className="connector-head">
+                <label className="toggle-row">
+                  <input
+                    checked={Boolean(connector.enabled)}
+                    onChange={(event) => updateConnector(template.id, "enabled", event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>{template.title}</span>
+                </label>
+                <small>{template.type}</small>
+              </div>
+              <p>{template.description}</p>
+              <div className="connector-fields">
+                {template.fields.map((field) => (
+                  <label key={field.key}>
+                    {field.label}
+                    <input
+                      type={field.secret ? "password" : "text"}
+                      value={connector[field.key] || ""}
+                      onChange={(event) => updateConnector(template.id, field.key, event.target.value)}
+                      placeholder={field.placeholder}
+                    />
+                  </label>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <button className="primary-button save-connectors" onClick={handleSave} type="button">
+        <FloppyDisk size={16} weight="bold" />
+        保存API配置并刷新
+      </button>
+    </section>
+  );
+}
+
+function RiskAnalysisPanel({ product, snapshot, analyzeRisk }) {
+  const defaultRegionId = product?.regionId || "sea";
+  const defaultCountryId = product?.countryId || "tw";
+  const [sourcingUrl, setSourcingUrl] = useState("");
+  const [regionId, setRegionId] = useState(defaultRegionId);
+  const [countryId, setCountryId] = useState(defaultCountryId);
+  const [result, setResult] = useState(null);
+  const [status, setStatus] = useState({ state: "idle", message: "输入1688链接后生成核验清单" });
+
+  useEffect(() => {
+    setRegionId(product?.regionId || "sea");
+    setCountryId(product?.countryId || "tw");
+    setResult(null);
+  }, [product?.id, product?.regionId, product?.countryId]);
+
+  const selectedRegion = snapshot.regions.find((region) => region.id === regionId);
+  const countryOptions = selectedRegion?.countries || [];
+  const selectedCountry = countryOptions.find((country) => country.id === countryId);
+
+  function handleRegionChange(event) {
+    const nextRegionId = event.target.value;
+    const nextRegion = snapshot.regions.find((region) => region.id === nextRegionId);
+    setRegionId(nextRegionId);
+    setCountryId(getDefaultCountryId(nextRegion));
+  }
+
+  async function handleAnalyze() {
+    setStatus({ state: "loading", message: "请求后端风险证据链" });
+    try {
+      const data = await analyzeRisk({
+        productId: product?.id,
+        title: product?.title,
+        categoryName: product?.categoryName,
+        sourcingUrl,
+        regionId,
+        regionName: selectedRegion?.name,
+        countryId,
+        countryName: selectedCountry?.name
+      });
+      setResult(data);
+      setStatus({ state: "ready", message: data.status === "needs-configuration" ? "需要配置风险证据数据源" : "已生成核验清单" });
+    } catch (error) {
+      setStatus({ state: "error", message: error.message });
+    }
+  }
+
+  const sections = result?.sections || [];
+
+  return (
+    <section className="panel risk-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>1688寻源风险分析</h2>
+          <p>围绕专利/商标、文化习俗、退货空包和海关/平台规则，避免货物出境后扣押、退回或损失。</p>
+        </div>
+        <span className={`connector-status ${status.state}`}>{status.message}</span>
+      </div>
+      <div className="risk-target">
+        <label className="wide-filter">
+          1688寻源链接
+          <span className="search-box">
+            <LinkSimple size={15} weight="bold" />
+            <input value={sourcingUrl} onChange={(event) => setSourcingUrl(event.target.value)} placeholder="https://detail.1688.com/offer/..." />
+          </span>
+        </label>
+        <label>
+          目标区域
+          <select value={regionId} onChange={handleRegionChange}>
+            {snapshot.regions.map((region) => (
+              <option key={region.id} value={region.id}>{region.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          国家/地区
+          <select value={countryId} onChange={(event) => setCountryId(event.target.value)}>
+            {countryOptions.map((country) => (
+              <option key={country.id} value={country.id}>{country.name}</option>
+            ))}
+          </select>
+        </label>
+        <button className="primary-button" onClick={handleAnalyze} type="button">
+          <Scales size={16} weight="bold" />
+          生成核验清单
+        </button>
+      </div>
+      <div className="risk-context">
+        <span>当前SKU：{product?.title || "未选择"}</span>
+        <span>目标市场：{selectedRegion?.name || "未指定"} / {selectedCountry?.name || "未指定"}</span>
+      </div>
+      {sections.length === 0 ? (
+        <div className="empty-state">请输入1688链接并选择目标市场；未配置证据源时只会返回材料清单和待接入数据链路。</div>
+      ) : (
+        <div className="risk-section-list">
+          {sections.map((section) => (
+            <article className="risk-section" key={section.id}>
+              <div>
+                <ShieldWarning size={18} weight="duotone" />
+                <strong>{section.title}</strong>
+                <span>{section.status}</span>
+              </div>
+              <h3>需要准备的材料</h3>
+              <ul>
+                {section.materials.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+              <h3>待接入数据源</h3>
+              <div className="tag-row">
+                {section.dataNeeds.map((item) => <span key={item}>{item}</span>)}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {result?.caveat ? <p className="risk-caveat">{result.caveat}</p> : null}
+    </section>
   );
 }
 
@@ -803,12 +1343,12 @@ function MetricsCommandCenter({ snapshot }) {
 
 function DataQualityBanner({ snapshot }) {
   const quality = snapshot.dataQuality || {};
-  const modeLabel = snapshot.dataMode === "mixed-local-import" ? "本机导入 + 规则补全" : "监控种子演示";
+  const modeLabel = snapshot.dataMode === "live-local-import" ? "真实导入/API数据" : "等待真实数据接入";
   const connectors = quality.connectorStatus || [];
   const activeConnectors = connectors.filter((connector) => connector.enabled);
 
   return (
-    <section className={`data-quality ${snapshot.dataMode === "mixed-local-import" ? "mixed" : "synthetic"}`} aria-label="数据可信度">
+    <section className={`data-quality ${snapshot.dataMode === "live-local-import" ? "mixed" : "synthetic"}`} aria-label="数据可信度">
       <div>
         <strong>{modeLabel}</strong>
         <p>{snapshot.dataModeNote}</p>
@@ -839,11 +1379,16 @@ function WorkflowRail({ steps }) {
   );
 }
 
-function OpportunityPools({ snapshot }) {
-  const pools = useMemo(() => snapshot.opportunityPools || [], [snapshot.opportunityPools]);
+function OpportunityPools({ snapshot, filters = {} }) {
+  const pools = useMemo(() => (snapshot.opportunityPools || [])
+    .filter((pool) => !filters.regionId || filters.regionId === "all" || pool.regionId === filters.regionId)
+    .filter((pool) => !filters.countryId || filters.countryId === "all" || pool.countryId === filters.countryId)
+    .filter((pool) => !filters.categoryId || filters.categoryId === "all" || pool.categoryId === filters.categoryId),
+  [snapshot.opportunityPools, filters.regionId, filters.countryId, filters.categoryId]);
   const [sourcingRegionId, setSourcingRegionId] = useState("all");
   const [sourcingPlatformId, setSourcingPlatformId] = useState("all");
   const [targetRegionId, setTargetRegionId] = useState("all");
+  const [targetCountryId, setTargetCountryId] = useState("all");
   const [sourcingCategoryId, setSourcingCategoryId] = useState("all");
   const [sourcingTierId, setSourcingTierId] = useState("all");
   const [sourcingQuery, setSourcingQuery] = useState("");
@@ -858,6 +1403,7 @@ function OpportunityPools({ snapshot }) {
     const optionList = (getter) => [...new Map(sourcingReferences.map(getter).filter(([id]) => id)).entries()];
     return {
       targetRegions: optionList((reference) => [reference.targetRegionId, reference.targetRegionName]),
+      targetCountries: optionList((reference) => [reference.targetCountryId, reference.targetCountryName]),
       categories: optionList((reference) => [reference.categoryId, reference.categoryName]),
       priceTiers: optionList((reference) => [reference.priceTierId, reference.priceTierLabel]),
       sourcingRegions: optionList((reference) => [reference.sourcingRegionId, reference.sourcingRegionName]),
@@ -867,6 +1413,7 @@ function OpportunityPools({ snapshot }) {
   const filteredSourcingReferences = useMemo(() => (
     sourcingReferences
       .filter((reference) => targetRegionId === "all" || reference.targetRegionId === targetRegionId)
+      .filter((reference) => targetCountryId === "all" || reference.targetCountryId === targetCountryId)
       .filter((reference) => sourcingCategoryId === "all" || reference.categoryId === sourcingCategoryId)
       .filter((reference) => sourcingTierId === "all" || reference.priceTierId === sourcingTierId)
       .filter((reference) => sourcingRegionId === "all" || reference.sourcingRegionId === sourcingRegionId)
@@ -879,7 +1426,7 @@ function OpportunityPools({ snapshot }) {
       })
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, 12)
-  ), [sourcingReferences, targetRegionId, sourcingCategoryId, sourcingTierId, sourcingRegionId, sourcingPlatformId, sourcingQuery]);
+  ), [sourcingReferences, targetRegionId, targetCountryId, sourcingCategoryId, sourcingTierId, sourcingRegionId, sourcingPlatformId, sourcingQuery]);
 
   return (
     <section className="panel">
@@ -890,11 +1437,13 @@ function OpportunityPools({ snapshot }) {
         </div>
       </div>
       <div className="opportunity-list">
-        {pools.slice(0, 8).map((pool) => (
+        {pools.length === 0 ? (
+          <div className="empty-state">当前区域/国家/品类没有真实机会池数据，请在风险/API页配置数据源或导入卖家后台数据。</div>
+        ) : pools.slice(0, 8).map((pool) => (
           <article className="opportunity-card" key={pool.id}>
             <div className="opportunity-top">
               <div>
-                <strong>{pool.regionName} / {pool.categoryName}</strong>
+                <strong>{pool.regionName} / {pool.countryName} / {pool.categoryName}</strong>
                 <span>{pool.segmentName}</span>
               </div>
               <span className={`priority-badge ${pool.priority === "高优先级" ? "high" : pool.priority === "验证池" ? "medium" : "low"}`}>{pool.priority}</span>
@@ -928,6 +1477,15 @@ function OpportunityPools({ snapshot }) {
             <select value={targetRegionId} onChange={(event) => setTargetRegionId(event.target.value)}>
               <option value="all">全部目标区域</option>
               {sourcingOptions.targetRegions.map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            目标国家/地区
+            <select value={targetCountryId} onChange={(event) => setTargetCountryId(event.target.value)}>
+              <option value="all">全部目标国家/地区</option>
+              {sourcingOptions.targetCountries.map(([id, label]) => (
                 <option key={id} value={id}>{label}</option>
               ))}
             </select>
@@ -987,6 +1545,7 @@ function OpportunityPools({ snapshot }) {
               </div>
               <div className="sourcing-link-meta">
                 <span>{reference.targetRegionName}</span>
+                <span>{reference.targetCountryName}</span>
                 <span>{reference.categoryName}</span>
                 <span>{reference.moqBand}</span>
                 <span>{reference.logisticsFit}</span>
@@ -1025,7 +1584,7 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
       <div className="panel-heading">
         <div>
           <h2>SKU筛选清单</h2>
-          <p>同款SKU先跨平台合并，再展开查看平台和区域二级明细。</p>
+          <p>同款SKU先跨平台合并，再展开查看平台、区域和国家/地区二级明细。</p>
         </div>
       </div>
       {skuGroups.length === 0 ? (
@@ -1065,7 +1624,7 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
                   <span>
                     <strong>{group.title}</strong>
                     <small>
-                      {group.platformCount}个平台 / {group.regionCount}个区域 / {group.categoryName} / {group.priceTierLabel}
+                      {group.platformCount}个平台 / {group.regionCount}个区域 / {group.countryCount}个国家地区 / {group.categoryName} / {group.priceTierLabel}
                     </small>
                   </span>
                   <span className={`stage-pill ${group.stage}`}>{stageLabel(group.stage)}</span>
@@ -1095,7 +1654,7 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
                     >
                       <span>
                         <strong>{product.platformName}</strong>
-                        <small>{product.regionName}</small>
+                        <small>{marketLabel(product)}</small>
                       </span>
                       <span className={`stage-pill ${product.stage}`}>{stageLabel(product.stage)}</span>
                       <span>{formatNumber(product.summary.sales90d)}</span>
@@ -1134,6 +1693,7 @@ function RankGroupsPanel({ snapshot }) {
           <button className={groupType === "region-platform-price-tier" ? "active" : ""} onClick={() => setGroupType("region-platform-price-tier")} type="button">区域/平台/价格带</button>
           <button className={groupType === "price-tier" ? "active" : ""} onClick={() => setGroupType("price-tier")} type="button">价格带</button>
           <button className={groupType === "region" ? "active" : ""} onClick={() => setGroupType("region")} type="button">区域</button>
+          <button className={groupType === "region-country" ? "active" : ""} onClick={() => setGroupType("region-country")} type="button">国家/地区</button>
           <button className={groupType === "category" ? "active" : ""} onClick={() => setGroupType("category")} type="button">品类</button>
         </div>
       </div>
@@ -1150,7 +1710,7 @@ function RankGroupsPanel({ snapshot }) {
                   <span className="rank-mark">{product.rank}</span>
                   <span>
                     <strong>{product.title}</strong>
-                    <small>{product.categoryName} / {stageLabel(product.stage)} / {product.sourceType === "local-import" ? "导入" : "种子"}</small>
+                    <small>{product.categoryName} / {stageLabel(product.stage)} / {product.sourceType === "local-import" ? "真实导入" : "待接入"}</small>
                   </span>
                   <em>{product.opportunityScore}</em>
                 </div>
@@ -1199,13 +1759,13 @@ function ProductDetail({ product }) {
       <div className="panel-heading">
         <div>
           <h2>{product.title}</h2>
-          <p>{product.regionName} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}</p>
+          <p>{marketLabel(product)} / {product.platformName} / {product.categoryName} / {product.priceTierLabel}</p>
         </div>
         <strong className="detail-score">{product.opportunityScore}</strong>
       </div>
 
       <div className="lineage-strip">
-        <span>{product.sourceType === "local-import" ? "本机导入数据" : "监控种子数据"}</span>
+        <span>{product.sourceType === "local-import" ? "本机真实导入/API数据" : "待接入真实数据"}</span>
         <span>导入行 {product.dataLineage?.importedRows ?? 0}</span>
         <span>置信度 {formatPercent(product.confidence, 0)}</span>
         <span>{product.dataLineage?.caveat}</span>

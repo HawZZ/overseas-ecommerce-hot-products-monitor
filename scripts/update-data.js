@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const dataDir = path.resolve(rootDir, process.env.DATA_DIR || "data");
 const refreshCadenceHours = Number(process.env.REFRESH_CADENCE_HOURS || 12);
+const allowSyntheticDemo = process.env.ALLOW_SYNTHETIC_DEMO === "1";
 
 const priceTiers = [
   { id: "0-5", label: "0-5美元", min: 0, max: 5 },
@@ -55,6 +56,38 @@ const regionSizing = {
     complianceFocus: "南非和尼日利亚本地认证、支付覆盖、售后可达性。",
     logisticsMode: "优先轻小耐用品，避免早期压重货库存。"
   }
+};
+
+const countryCatalog = {
+  sea: [
+    { id: "tw", code: "TW", name: "台湾", default: true, shopeeDomain: "shopee.tw" },
+    { id: "vn", code: "VN", name: "越南", shopeeDomain: "shopee.vn" },
+    { id: "th", code: "TH", name: "泰国", shopeeDomain: "shopee.co.th" },
+    { id: "sg", code: "SG", name: "新加坡", shopeeDomain: "shopee.sg" },
+    { id: "my", code: "MY", name: "马来西亚", shopeeDomain: "shopee.com.my" },
+    { id: "ph", code: "PH", name: "菲律宾", shopeeDomain: "shopee.ph" },
+    { id: "id", code: "ID", name: "印尼", shopeeDomain: "shopee.co.id" }
+  ],
+  "north-america": [
+    { id: "us", code: "US", name: "美国", default: true },
+    { id: "ca", code: "CA", name: "加拿大" },
+    { id: "mx", code: "MX", name: "墨西哥" }
+  ],
+  "western-europe": [
+    { id: "uk", code: "GB", name: "英国", default: true },
+    { id: "de", code: "DE", name: "德国" },
+    { id: "fr", code: "FR", name: "法国" },
+    { id: "es", code: "ES", name: "西班牙" },
+    { id: "it", code: "IT", name: "意大利" },
+    { id: "nl", code: "NL", name: "荷兰" }
+  ],
+  africa: [
+    { id: "za", code: "ZA", name: "南非", default: true },
+    { id: "ng", code: "NG", name: "尼日利亚" },
+    { id: "eg", code: "EG", name: "埃及" },
+    { id: "ke", code: "KE", name: "肯尼亚" },
+    { id: "ma", code: "MA", name: "摩洛哥" }
+  ]
 };
 
 const buyerSegments = [
@@ -444,6 +477,8 @@ function buildSourcingReferences(pool, topProducts) {
           localKeyword: keyword.zh,
           targetRegionId: pool.regionId,
           targetRegionName: pool.regionName,
+          targetCountryId: pool.countryId,
+          targetCountryName: pool.countryName,
           categoryId: pool.categoryId,
           categoryName: pool.categoryName,
           priceTierId: product.priceTierId,
@@ -556,11 +591,14 @@ function inferTierId(price) {
 
 function normalizeVendorRow(row, sourceName) {
   const price = toNumber(readField(row, ["price", "averageOrderValue", "aov", "客单价", "售价"]));
+  const rawCountryCode = row._raw?.countryCode || row.countryCode || row.country || "";
   return {
     sourceName,
     title: readField(row, ["title", "sku", "product", "商品", "产品"]) || "未命名导入SKU",
     regionId: readField(row, ["regionId", "region", "区域"]),
     platformId: readField(row, ["platformId", "platform", "平台"]),
+    countryCode: readField(row, ["countryCode", "country", "market", "国家", "地区"]) || rawCountryCode,
+    countryId: readField(row, ["countryId", "marketId", "国家ID", "地区ID"]),
     categoryId: readField(row, ["categoryId", "category", "品类"]),
     priceTierId: readField(row, ["priceTierId", "tier", "价格带"]) || inferTierId(price),
     date: readField(row, ["date", "日期"]),
@@ -569,7 +607,8 @@ function normalizeVendorRow(row, sourceName) {
     conversionRate: toNumber(readField(row, ["conversionRate", "conversion", "cvr", "成单率"])),
     averageOrderValue: price,
     reviewSentiment: toNumber(readField(row, ["sentiment", "reviewSentiment", "口碑分"])),
-    reviewVolume: toNumber(readField(row, ["reviewVolume", "reviews", "评论数"]))
+    reviewVolume: toNumber(readField(row, ["reviewVolume", "reviews", "评论数"])),
+    metricStatus: row.metricStatus || {}
   };
 }
 
@@ -621,7 +660,7 @@ function buildDataQuality({ connectors, vendorImport }) {
   }));
   const liveConnectorCount = connectorEntries.filter((connector) => connector.enabled && connector.status !== "waiting-for-files").length;
   const vendorRowCount = vendorImport.rows.length;
-  const dataMode = vendorRowCount > 0 ? "mixed-local-import" : "synthetic-seed";
+  const dataMode = vendorRowCount > 0 ? "live-local-import" : "awaiting-real-data";
 
   return {
     dataMode,
@@ -633,9 +672,9 @@ function buildDataQuality({ connectors, vendorImport }) {
     },
     connectorStatus: connectorEntries,
     importedFiles: vendorImport.files,
-    boundary: dataMode === "synthetic-seed"
-      ? "当前快照由监控种子和规则模型生成，用于工作流演示和结构验证。生产决策前必须接入授权平台API、卖家后台导出、广告/搜索/评论数据或第三方数据商。"
-      : "当前快照混合了本机授权导出和规则补全。SKU级决策应优先查看dataLineage中的imported字段。"
+    boundary: dataMode === "awaiting-real-data"
+      ? "当前没有可用的授权平台API、卖家后台导出、广告/搜索/评论数据或第三方数据商文件；看板只展示数据链路和待接入占位，不生成模拟榜单。"
+      : "当前快照只使用本机授权导入/API采集结果；评分、风险清单和4P建议属于规则化分析层，原始指标以dataLineage和导入文件为准。"
   };
 }
 
@@ -934,7 +973,29 @@ function resolveByIdOrName(entries, value) {
   return entries.find((entry) => entry.id?.toLowerCase() === normalized || entry.name?.toLowerCase() === normalized);
 }
 
-function buildImportedTrend(rows, tier, fallbackPrice) {
+function enrichPlatformSources(platformSources) {
+  return {
+    ...platformSources,
+    regions: platformSources.regions.map((region) => ({
+      ...region,
+      countries: region.countries || countryCatalog[region.id] || []
+    }))
+  };
+}
+
+function resolveCountry(region, row) {
+  const countries = region.countries || countryCatalog[region.id] || [];
+  const code = String(row.countryCode || "").trim().toUpperCase();
+  const id = String(row.countryId || "").trim().toLowerCase();
+  const name = String(row.countryName || "").trim().toLowerCase();
+  return countries.find((country) => (
+    (id && country.id?.toLowerCase() === id)
+    || (code && country.code?.toUpperCase() === code)
+    || (name && country.name?.toLowerCase() === name)
+  )) || null;
+}
+
+function buildImportedTrend(rows) {
   const rowsByDate = new Map(rows.filter((row) => row.date).map((row) => [row.date, row]));
   return Array.from({ length: 90 }, (_, index) => {
     const date = isoDateDaysAgo(89 - index);
@@ -944,7 +1005,8 @@ function buildImportedTrend(rows, tier, fallbackPrice) {
       salesUnits: Math.max(0, Math.round(row?.salesUnits || 0)),
       searchVolume: Math.max(0, Math.round(row?.searchVolume || 0)),
       conversionRate: row?.conversionRate ? round(row.conversionRate > 1 ? row.conversionRate / 100 : row.conversionRate, 4) : 0,
-      averageOrderValue: row?.averageOrderValue ? round(row.averageOrderValue, 2) : round(fallbackPrice || (tier.min + tier.max) / 2, 2)
+      averageOrderValue: row?.averageOrderValue ? round(row.averageOrderValue, 2) : 0,
+      observed: Boolean(row)
     };
   });
 }
@@ -954,13 +1016,15 @@ function buildImportedProducts({ vendorRows, platformSources }) {
   for (const row of vendorRows) {
     const region = resolveByIdOrName(platformSources.regions, row.regionId);
     const platform = region ? resolveByIdOrName(region.platforms, row.platformId) : null;
+    const country = region ? resolveCountry(region, row) : null;
     const tier = priceTiers.find((entry) => entry.id === row.priceTierId || entry.label === row.priceTierId);
     const category = resolveByIdOrName(categoryPool, row.categoryId) || categoryPool[0];
     if (!region || !platform || !tier) continue;
 
-    const key = `${region.id}:${platform.id}:${tier.id}:${category.id}:${row.title}`;
+    const countryKey = country?.id || "regional";
+    const key = `${region.id}:${countryKey}:${platform.id}:${tier.id}:${category.id}:${row.title}`;
     if (!groups.has(key)) {
-      groups.set(key, { region, platform, tier, category, title: row.title, rows: [] });
+      groups.set(key, { key, region, country, platform, tier, category, title: row.title, rows: [] });
     }
     groups.get(key).rows.push(row);
   }
@@ -972,7 +1036,7 @@ function buildImportedProducts({ vendorRows, platformSources }) {
     const fallbackPrice = priceRows.length
       ? priceRows.reduce((sum, row) => sum + row.averageOrderValue, 0) / priceRows.length
       : (group.tier.min + group.tier.max) / 2;
-    const trend = buildImportedTrend(rows, group.tier, fallbackPrice);
+    const trend = buildImportedTrend(rows);
     const summary = summarizeTrend(trend);
     const pricing = estimatePricing({ price: summary.averageOrderValue || fallbackPrice, tier: group.tier, regionId: group.region.id, category: group.category, rng });
     const sentiment = estimateSentiment({ category: group.category, summary, rng });
@@ -993,10 +1057,13 @@ function buildImportedProducts({ vendorRows, platformSources }) {
     const stage = score >= 78 && cohort.state === "scale" ? "scale" : score >= 70 ? "test" : cohort.state === "protect-margin" ? "fix-margin" : "watch";
 
     return {
-      id: `imported-${hashString(`${group.region.id}:${group.platform.id}:${group.title}`).toString(16)}`,
+      id: `imported-${hashString(group.key).toString(16)}`,
       title: group.title,
       regionId: group.region.id,
       regionName: group.region.name,
+      countryId: group.country?.id || "regional",
+      countryCode: group.country?.code || "",
+      countryName: group.country?.name || "区域整体/未知",
       platformId: group.platform.id,
       platformName: group.platform.name,
       priceTierId: group.tier.id,
@@ -1014,10 +1081,17 @@ function buildImportedProducts({ vendorRows, platformSources }) {
       recommendation: cohort.validationAction,
       sourceType: "local-import",
       dataLineage: {
-        mode: "mixed-local-import",
+        mode: "live-local-import",
         importedRows: rows.length,
         sourceFiles: [...new Set(rows.map((row) => row.sourceName))],
-        caveat: "本机授权导入数据，缺失日期仍由结构化空值保留。"
+        metricStatus: rows.reduce((acc, row) => {
+          for (const [metric, state] of Object.entries(row.metricStatus || {})) {
+            acc[metric] = acc[metric] || {};
+            acc[metric][state] = (acc[metric][state] || 0) + 1;
+          }
+          return acc;
+        }, {}),
+        caveat: "本机授权导入/API采集数据；缺失日期为空值占位，不代表真实零销量。"
       },
       summary,
       pricing,
@@ -1033,24 +1107,27 @@ function buildImportedProducts({ vendorRows, platformSources }) {
 function buildOpportunityPools(products) {
   return Object.values(
     products.reduce((groups, product) => {
-      const key = `${product.regionId}:${product.categoryId}`;
+      const key = `${product.regionId}:${product.countryId || "regional"}:${product.categoryId}`;
       if (!groups[key]) {
         const category = categoryPool.find((entry) => entry.id === product.categoryId);
         const region = regionSizing[product.regionId];
-        const tamUsdM = round(region.tamUsdB * 1000 * category.marketWeight, 1);
         groups[key] = {
           id: key,
           regionId: product.regionId,
           regionName: product.regionName,
+          countryId: product.countryId || "regional",
+          countryName: product.countryName || "区域整体/未知",
           categoryId: product.categoryId,
           categoryName: product.categoryName,
           segmentName: buyerSegments.find((segment) => segment.id === category.segmentId)?.name || "未分组",
           jtbd: category.jtbd,
           painPoints: category.painPoints,
           productFit: category.gains.join("、"),
-          tamUsdM,
-          samUsdM: round(tamUsdM * region.serviceableRate, 1),
-          somUsdM: round(tamUsdM * region.serviceableRate * region.obtainableRate, 2),
+          tamUsdM: null,
+          samUsdM: null,
+          somUsdM: null,
+          marketSizingScope: "country-data-required",
+          marketSizingNote: "国家/地区级TAM、SAM、SOM需要接入真实GMV、类目交易或第三方市场规模数据后计算。",
           growthRate: region.growth,
           complianceFocus: region.complianceFocus,
           channelFit: region.channelFit,
@@ -1076,7 +1153,7 @@ function buildOpportunityPools(products) {
         competitiveIntensity,
         winningPriceTiers: [...new Set(top.slice(0, 5).map((product) => product.priceTierLabel))],
         leadingPlatforms: [...new Set(top.slice(0, 5).map((product) => product.platformName))],
-        assumptions: ["市场规模为监控模型估算，需要用平台GMV、广告词和店铺转化数据校准。", "SOM按1-3年可获得份额估算，不代表承诺营收。"],
+        assumptions: ["国家/地区级市场规模未用区域总量硬拆，需要接入平台GMV、广告词和店铺转化数据。", "SOM必须由真实可服务渠道、库存能力和广告预算校准。"],
         risks: competitiveIntensity > 0.7 ? ["价格竞争强", "需要更强本地化卖点"] : ["需验证物流成本", "需验证评论关键词"],
         recommendedAction: priorityScore >= 78 ? "进入SKU筛选和打样排期。" : "补充搜索词、评价和广告成本数据后再决策。",
         sourcingReferences: buildSourcingReferences(pool, top)
@@ -1095,14 +1172,26 @@ function buildRegionalSummary(platformSources, products) {
   return platformSources.regions.map((region) => {
     const regionProducts = products.filter((product) => product.regionId === region.id);
     const topProducts = [...regionProducts].sort((a, b) => b.opportunityScore - a.opportunityScore).slice(0, 10);
+    const countryRows = (region.countries || []).map((country) => {
+      const countryProducts = regionProducts.filter((product) => product.countryId === country.id);
+      return {
+        ...country,
+        productCount: countryProducts.length,
+        totalSales90d: countryProducts.reduce((total, product) => total + product.summary.sales90d, 0),
+        totalSearch90d: countryProducts.reduce((total, product) => total + product.summary.search90d, 0)
+      };
+    });
     return {
       id: region.id,
       name: region.name,
+      countries: countryRows,
       platformCount: region.platforms.length,
       marketSizing: regionSizing[region.id],
       totalSales90d: regionProducts.reduce((total, product) => total + product.summary.sales90d, 0),
       totalSearch90d: regionProducts.reduce((total, product) => total + product.summary.search90d, 0),
-      averageConversionRate: round(regionProducts.reduce((total, product) => total + product.summary.conversionRate, 0) / regionProducts.length, 4),
+      averageConversionRate: regionProducts.length
+        ? round(regionProducts.reduce((total, product) => total + product.summary.conversionRate, 0) / regionProducts.length, 4)
+        : 0,
       topProducts: topProducts.map((product, index) => ({
         rank: index + 1,
         productId: product.id,
@@ -1123,6 +1212,9 @@ function compactRankProduct(product, index) {
     title: product.title,
     regionId: product.regionId,
     regionName: product.regionName,
+    countryId: product.countryId,
+    countryCode: product.countryCode,
+    countryName: product.countryName,
     platformId: product.platformId,
     platformName: product.platformName,
     priceTierId: product.priceTierId,
@@ -1182,6 +1274,19 @@ function buildRankGroups(platformSources, products) {
       regionName: region.name
     }));
 
+    for (const country of region.countries || []) {
+      groups.push(rankTop10(products, (product) => product.regionId === region.id && product.countryId === country.id, {
+        id: `region-country:${region.id}:${country.id}`,
+        type: "region-country",
+        label: `${region.name} / ${country.name} Top10`,
+        regionId: region.id,
+        regionName: region.name,
+        countryId: country.id,
+        countryCode: country.code,
+        countryName: country.name
+      }));
+    }
+
     for (const platform of region.platforms) {
       groups.push(rankTop10(products, (product) => product.regionId === region.id && product.platformId === platform.id, {
         id: `region-platform:${region.id}:${platform.id}`,
@@ -1226,11 +1331,13 @@ function buildWikiSignals(products) {
   return categoryPool.map((category) => {
     const categoryProducts = products.filter((product) => product.categoryId === category.id);
     const top = [...categoryProducts].sort((a, b) => b.opportunityScore - a.opportunityScore).slice(0, 12);
-    const averageScore = round(top.reduce((sum, product) => sum + product.opportunityScore, 0) / top.length, 1);
+    const averageScore = top.length ? round(top.reduce((sum, product) => sum + product.opportunityScore, 0) / top.length, 1) : 0;
     const searchLed = top.filter((product) => product.summary.searchChange > product.summary.salesChange + 12).length;
     const marginSafe = top.filter((product) => product.pricing.grossMarginRate >= 0.28).length;
     const sentimentSafe = top.filter((product) => product.sentiment.score >= 0.42).length;
-    const observedPattern = searchLed >= 6
+    const observedPattern = top.length === 0
+      ? "暂无真实SKU数据，等待授权API、卖家后台导出或第三方数据商接入后生成。"
+      : searchLed >= 6
       ? "搜索增长领先销量，先补内容和关键词承接，再放大库存。"
       : marginSafe >= 8 && sentimentSafe >= 8
         ? "毛利和口碑同时稳定，适合进入小批量补货。"
@@ -1258,11 +1365,13 @@ function buildWikiSignals(products) {
 }
 
 function buildMetricsFramework({ products, opportunityPools, skuShortlist, generatedAt }) {
+  const productCount = products.length;
+  const shortlistCount = skuShortlist.length;
   const scaleReady = products.filter((product) => product.stage === "scale").length;
   const tested = products.filter((product) => product.stage === "test" || product.stage === "scale").length;
   const highPriorityPools = opportunityPools.filter((pool) => pool.priority === "高优先级").length;
-  const avgMargin = products.reduce((sum, product) => sum + product.pricing.grossMarginRate, 0) / products.length;
-  const avgSentiment = products.reduce((sum, product) => sum + product.sentiment.score, 0) / products.length;
+  const avgMargin = productCount ? products.reduce((sum, product) => sum + product.pricing.grossMarginRate, 0) / productCount : 0;
+  const avgSentiment = productCount ? products.reduce((sum, product) => sum + product.sentiment.score, 0) / productCount : 0;
   const searchLed = products.filter((product) => product.summary.searchChange > product.summary.salesChange + 12).length;
   const lowConfidence = products.filter((product) => product.confidence < 0.5).length;
   const hoursSinceRefresh = round((Date.now() - Date.parse(generatedAt)) / 36e5, 2);
@@ -1293,20 +1402,20 @@ function buildMetricsFramework({ products, opportunityPools, skuShortlist, gener
     ),
     inputMetrics: [
       metric("Input", "高优先级机会池", highPriorityPools, "区域和品类组合中priorityScore>=78的机会池数量。", "market-segments + market-sizing", "条形图", ">=6", "<3"),
-      metric("Input", "SKU验证通过率", round(tested / products.length, 3), "test或scale阶段SKU数 / 监控SKU数。", "competitor-analysis + pricing-strategy", "漏斗", ">=18%", "<10%"),
-      metric("Input", "搜索领先指数", round(searchLed / products.length, 3), "搜索增速超过销量增速12pp的SKU占比。", "搜索词、平台搜索量、广告词", "折线", "18%-35%", "<8%或>50%"),
+      metric("Input", "SKU验证通过率", productCount ? round(tested / productCount, 3) : 0, "test或scale阶段SKU数 / 监控SKU数。", "competitor-analysis + pricing-strategy", "漏斗", ">=18%", "<10%"),
+      metric("Input", "搜索领先指数", productCount ? round(searchLed / productCount, 3) : 0, "搜索增速超过销量增速12pp的SKU占比。", "搜索词、平台搜索量、广告词", "折线", "18%-35%", "<8%或>50%"),
       metric("Input", "平均毛利安全垫", round(avgMargin, 3), "目标售价扣除供货、物流、平台佣金、税费后的毛利率均值。", "pricing-strategy", "数字 + 分布", ">=28%", "<22%"),
       metric("Input", "平均口碑分", round(avgSentiment, 2), "评论和退货代理信号映射为-1到+1的情绪均值。", "sentiment-analysis", "热力图", ">=0.42", "<0.25")
     ],
     healthMetrics: [
       metric("Health", "数据新鲜度", `${hoursSinceRefresh}小时`, "当前时间和快照生成时间的差值。", "scheduler", "状态", `<=${refreshCadenceHours + 1}小时`, `>${refreshCadenceHours + 2}小时`),
-      metric("Health", "低置信SKU占比", round(lowConfidence / products.length, 3), "confidence<0.5的SKU数 / 监控SKU数。", "数据质量规则", "数字", "<=20%", ">30%"),
+      metric("Health", "低置信SKU占比", productCount ? round(lowConfidence / productCount, 3) : 0, "confidence<0.5的SKU数 / 监控SKU数。", "数据质量规则", "数字", "<=20%", ">30%"),
       metric("Health", "认证覆盖", "后端登录", "所有数据API必须通过本机后端账号密码或服务Token。", "Express API", "状态", "100%", "任何401异常飙升")
     ],
     businessMetrics: [
-      metric("Business", "候选SKU平均客单价", round(skuShortlist.reduce((sum, product) => sum + product.summary.averageOrderValue, 0) / skuShortlist.length, 2), "SKU shortlist当前客单价均值。", "平台订单和价格监控", "数字", "按价格带分层", "单价格带偏离>20%"),
+      metric("Business", "候选SKU平均客单价", shortlistCount ? round(skuShortlist.reduce((sum, product) => sum + product.summary.averageOrderValue, 0) / shortlistCount, 2) : 0, "SKU shortlist当前客单价均值。", "平台订单和价格监控", "数字", "按价格带分层", "单价格带偏离>20%"),
       metric("Business", "库存放大候选", skuShortlist.filter((product) => product.stage === "scale").length, "可进入补货或广告放大的SKU数量。", "cohort-analysis", "列表", ">=8", "<3"),
-      metric("Business", "高竞争SKU占比", round(products.filter((product) => product.competitorIntensity > 0.72).length / products.length, 3), "competitorIntensity>0.72的SKU占比。", "competitor-analysis", "分布", "<35%", ">50%")
+      metric("Business", "高竞争SKU占比", productCount ? round(products.filter((product) => product.competitorIntensity > 0.72).length / productCount, 3) : 0, "competitorIntensity>0.72的SKU占比。", "competitor-analysis", "分布", "<35%", ">50%")
     ]
   };
 }
@@ -1432,20 +1541,22 @@ function buildWorkflowSteps() {
 }
 
 async function generateSnapshot(platformSources) {
+  const enrichedPlatformSources = enrichPlatformSources(platformSources);
   const connectors = await readJsonIfExists(path.resolve(dataDir, "connectors.json"), await readJsonIfExists(path.resolve(dataDir, "connectors.example.json"), {}));
   const vendorImport = await loadVendorExports(connectors);
   const dataQuality = buildDataQuality({ connectors, vendorImport });
-  const products = [];
-  for (const region of platformSources.regions) {
-    for (const platform of region.platforms) {
-      priceTiers.forEach((tier, tierIndex) => {
-        for (let rankSeed = 1; rankSeed <= 10; rankSeed += 1) {
-          products.push(createProduct({ region, platform, tier, tierIndex, rankSeed }));
-        }
-      });
+  const products = buildImportedProducts({ vendorRows: vendorImport.rows, platformSources: enrichedPlatformSources });
+  if (allowSyntheticDemo && products.length === 0) {
+    for (const region of enrichedPlatformSources.regions) {
+      for (const platform of region.platforms) {
+        priceTiers.forEach((tier, tierIndex) => {
+          for (let rankSeed = 1; rankSeed <= 10; rankSeed += 1) {
+            products.push(createProduct({ region, platform, tier, tierIndex, rankSeed }));
+          }
+        });
+      }
     }
   }
-  products.push(...buildImportedProducts({ vendorRows: vendorImport.rows, platformSources }));
 
   const tierRanks = priceTiers.map((tier) => ({
     ...tier,
@@ -1461,11 +1572,11 @@ async function generateSnapshot(platformSources) {
     .slice(0, 40)
     .map((product, index) => ({ ...product, shortlistRank: index + 1 }));
   const generatedAt = new Date().toISOString();
-  const regionalSummary = buildRegionalSummary(platformSources, products);
+  const regionalSummary = buildRegionalSummary(enrichedPlatformSources, products);
   const wikiSignals = buildWikiSignals(products);
   const metricsFramework = buildMetricsFramework({ products, opportunityPools, skuShortlist, generatedAt });
   const alerts = buildAlerts({ products, metricsFramework });
-  const rankGroups = buildRankGroups(platformSources, products);
+  const rankGroups = buildRankGroups(enrichedPlatformSources, products);
 
   return {
     generatedAt,
@@ -1475,9 +1586,9 @@ async function generateSnapshot(platformSources) {
     dataQuality,
     refreshCadenceHours,
     priceTiers,
-    regions: platformSources.regions,
-    sources: platformSources.sources,
-    globalDataSources: platformSources.globalDataSources,
+    regions: enrichedPlatformSources.regions,
+    sources: enrichedPlatformSources.sources,
+    globalDataSources: enrichedPlatformSources.globalDataSources,
     workflowSteps: buildWorkflowSteps(),
     buyerSegments,
     regionalSummary,
@@ -1498,12 +1609,12 @@ function createDefaultWiki(snapshot) {
   const generatedDate = snapshot.generatedAt.slice(0, 10);
   const opportunityRows = snapshot.opportunityPools
     .slice(0, 8)
-    .map((pool, index) => `${index + 1}. ${pool.regionName} / ${pool.categoryName}: ${pool.priority}，SOM约${pool.somUsdM}百万美元，动作：${pool.recommendedAction}`)
-    .join("\n");
+    .map((pool, index) => `${index + 1}. ${pool.regionName}-${pool.countryName} / ${pool.categoryName}: ${pool.priority}，SOM：${formatWikiSizing(pool.somUsdM)}，动作：${pool.recommendedAction}`)
+    .join("\n") || "暂无真实机会池数据，需先接入授权API、卖家后台导出或第三方数据商。";
   const skuRows = snapshot.skuShortlist
     .slice(0, 12)
-    .map((product, index) => `${index + 1}. ${product.title}｜${product.regionName}/${product.platformName}/${product.priceTierLabel}｜阶段：${product.stage}｜机会分：${product.opportunityScore}｜动作：${product.recommendation}`)
-    .join("\n");
+    .map((product, index) => `${index + 1}. ${product.title}｜${product.regionName}-${product.countryName}/${product.platformName}/${product.priceTierLabel}｜阶段：${product.stage}｜机会分：${product.opportunityScore}｜动作：${product.recommendation}`)
+    .join("\n") || "暂无真实SKU数据。";
   const categorySections = snapshot.wikiSignals
     .map(
       (signal) => `## ${signal.categoryName}
@@ -1523,7 +1634,7 @@ function createDefaultWiki(snapshot) {
 
 更新时间：${generatedDate}
 
-本 wiki 由本地脚本根据最新看板快照生成。默认模式使用监控种子数据，不调用模型；接入真实平台、广告、评论和订单数据后，结论会随快照更新。
+本 wiki 由本地脚本根据最新看板快照生成。默认不生成模拟数据；只有接入授权平台、广告、评论、订单导出或第三方数据商后，才会生成SKU榜单和机会池结论。
 
 ## 组合工作流
 
@@ -1550,6 +1661,10 @@ ${skuRows}
 
 ${categorySections}
 `;
+}
+
+function formatWikiSizing(value) {
+  return value == null ? "待接入国家/地区级市场规模数据" : `约${value}百万美元`;
 }
 
 function trimChineseStop(value) {
@@ -1628,13 +1743,13 @@ async function main() {
   const wiki = await maybeCreateAiWiki(snapshot);
 
   await fs.writeFile(path.resolve(dataDir, "latest-snapshot.json"), `${JSON.stringify(snapshot)}\n`);
-  await fs.writeFile(path.resolve(rootDir, "docs", "product-selection-wiki.md"), wiki);
+  await fs.writeFile(path.resolve(dataDir, "product-selection-wiki.md"), wiki);
 
   console.log(`Generated ${snapshot.tierRanks.length} price-tier rankings at ${snapshot.generatedAt}`);
   console.log(`Workflow version: ${snapshot.workflowVersion}`);
   console.log(`Refresh cadence: ${snapshot.refreshCadenceHours} hours`);
   console.log(`Wrote ${path.relative(rootDir, path.resolve(dataDir, "latest-snapshot.json"))}`);
-  console.log("Wrote docs/product-selection-wiki.md");
+  console.log("Wrote data/product-selection-wiki.md");
 }
 
 main().catch((error) => {

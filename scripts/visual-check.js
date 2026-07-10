@@ -38,14 +38,24 @@ for (const viewport of viewports) {
   await page.locator("input[autocomplete='username']").fill(visualUsername);
   await page.locator("input[autocomplete='current-password']").fill(visualPassword);
   await page.getByRole("button", { name: "登录" }).click();
+  await page.locator(".page-tabs").waitFor({ state: "visible", timeout: 60000 });
+  const defaultCountry = await page.locator(".standalone-filter select").nth(1).inputValue();
+  if (defaultCountry !== "tw") {
+    throw new Error(`Default country should be Taiwan (tw), got ${defaultCountry}`);
+  }
+  await page.locator(".standalone-filter select").nth(1).selectOption("all");
   await page.locator(".product-group").first().waitFor({ state: "visible", timeout: 60000 });
-  await page.locator(".sourcing-link").first().waitFor({ state: "visible", timeout: 60000 });
   await page.locator(".chart-frame svg").first().waitFor({ state: "visible", timeout: 60000 });
+  const productRows = await page.locator(".product-group").count();
+  const svgCount = await page.locator(".chart-frame svg").count();
+  await page.getByRole("button", { name: "区域品类" }).click();
+  await page.locator(".sourcing-link").first().waitFor({ state: "visible", timeout: 60000 });
+  const sourcingLinks = await page.locator(".sourcing-link").count();
+  await page.getByRole("button", { name: "风险/API" }).click();
+  await page.locator(".connector-panel").waitFor({ state: "visible", timeout: 60000 });
+  const connectorPanels = await page.locator(".connector-card").count();
 
   const title = await page.locator(".brand-line").innerText();
-  const productRows = await page.locator(".product-group").count();
-  const sourcingLinks = await page.locator(".sourcing-link").count();
-  const svgCount = await page.locator(".chart-frame svg").count();
   const overflow = await page.evaluate(() => {
     const viewportWidth = window.innerWidth;
     return [...document.querySelectorAll("body *")].some((element) => {
@@ -64,6 +74,7 @@ for (const viewport of viewports) {
     productRows,
     sourcingLinks,
     svgCount,
+    connectorPanels,
     overflow,
     errors,
     screenshot
@@ -74,7 +85,7 @@ await browser.close();
 
 console.log(JSON.stringify(results, null, 2));
 
-const failed = results.some((result) => result.productRows < 1 || result.sourcingLinks < 1 || result.svgCount < 1 || result.overflow || result.errors.length > 0);
+const failed = results.some((result) => result.productRows < 1 || result.sourcingLinks < 1 || result.svgCount < 1 || result.connectorPanels < 1 || result.overflow || result.errors.length > 0);
 if (failed) {
   process.exit(1);
 }

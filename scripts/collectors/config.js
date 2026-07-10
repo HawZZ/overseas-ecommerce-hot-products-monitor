@@ -12,6 +12,7 @@ export const proxyDispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
 if (proxyUrl) console.log(`[config] Using proxy: ${proxyUrl}`);
 
 export const seaCountries = [
+  { code: "TW", name: "Taiwan", shopeeDomain: "shopee.tw", lazadaDomain: "", currency: "TWD", currencyToUsd: 0.031 },
   { code: "SG", name: "Singapore", shopeeDomain: "shopee.sg", lazadaDomain: "lazada.sg", currency: "SGD", currencyToUsd: 0.74 },
   { code: "MY", name: "Malaysia", shopeeDomain: "shopee.com.my", lazadaDomain: "lazada.com.my", currency: "MYR", currencyToUsd: 0.21 },
   { code: "TH", name: "Thailand", shopeeDomain: "shopee.co.th", lazadaDomain: "lazada.co.th", currency: "THB", currencyToUsd: 0.028 },

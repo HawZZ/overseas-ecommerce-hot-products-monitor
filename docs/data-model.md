@@ -5,6 +5,7 @@
 `data/platform-sources.json` 包含：
 
 - `regions`：东南亚、北美、西欧、非洲。
+- `countries`：每个区域下的国家/地区筛选维度。东南亚默认关注 `tw` 台湾；这只是监控维度配置，不生成交易数据。
 - `platforms`：每个区域 Top5 平台。
 - `marketSharePercent`：公开资料提供可比份额时使用。
 - `platformWeight`：只有排名、GMV 或市场领导描述时使用，不等同真实市占率。
@@ -16,14 +17,14 @@
 
 - `workflowVersion`：当前工作流版本。
 - `refreshCadenceHours`：后端刷新频率，默认 12 小时。
-- `dataMode`：`synthetic-seed` 表示监控种子演示，`mixed-local-import` 表示已读取本机授权导出并用规则补全缺失维度。
+- `dataMode`：`live-local-import` 表示已读取本机授权导出/API采集结果，`awaiting-real-data` 表示暂无真实SKU数据，只展示数据链路和占位。
 - `dataQuality`：连接器状态、导入文件数、导入行数、导入文件列表和数据边界说明。
 - `workflowSteps`：PM 组合工作流步骤和每步产物。
 - `metricsFramework`：North Star、输入指标、健康指标、业务指标、定义、来源、目标和告警阈值。
 - `alerts`：需要运营、供应链、产品或数据处理的告警队列。
 - `marketSegments`：买家细分、JTBD、痛点、收益和适配说明。
-- `opportunityPools`：区域/品类机会池，包含 TAM、SAM、SOM、增长率、竞争强度、推荐动作和 `sourcingReferences` 寻源参考。
-- `sourcingReferences`：面向机会池的商品搜索入口，包含目标区域、品类、价格带、寻源区域、寻源平台、MOQ 区间、物流适配、匹配分和平台搜索链接。默认覆盖中国大陆寻源，并按目标区域补充越南、印度、土耳其、北美等替代区域。
+- `opportunityPools`：区域/国家地区/品类机会池，包含增长率、竞争强度、推荐动作和 `sourcingReferences` 寻源参考。国家/地区级 TAM、SAM、SOM 缺少真实市场规模数据时显示为待接入。
+- `sourcingReferences`：面向机会池的商品搜索入口，包含目标区域、目标国家/地区、品类、价格带、寻源区域、寻源平台、MOQ 区间、物流适配、匹配分和平台搜索链接。默认覆盖中国大陆寻源，并按目标区域补充越南、印度、土耳其、北美等替代区域。
 - `priceTiers`：0-5、5-15、15-30、30-50、50-70、70-100、100-200 美元。
 - `tierRanks`：每个价格带 Top10 商品。
 - `rankGroups`：持久化分组 Top10，包含价格带、区域、区域+平台、区域+平台+价格带、品类等维度。每个榜单商品保留 90 天趋势、summary、pricing、sentiment、cohort 和 dataLineage。
@@ -35,11 +36,13 @@
 - `cohort`：30 天 cohort 对比、趋势异常、留存代理指标和下一步验证动作。
 - `sentiment`：评论/口碑代理信号，使用 -1 到 +1 的情绪分。
 - `product4p`：当前 SKU 的 Product、Price、Place、Promotion 执行动作。
-- `sourceType`：`synthetic` 或 `local-import`。
+- `sourceType`：当前生产路径只允许 `local-import` 或未来官方 API 来源；默认刷新不生成 `synthetic` SKU。
 - `dataLineage`：SKU 数据来源、导入行数、来源文件和使用 caveat。
 - `wikiSignals`：沉淀到选品 wiki 的品类级信号。
 - `strategyCanvas`：Product Strategy Canvas 九宫格。
 - `gtmPlaybook`：渠道、信息、KPI、90 天路线图和风险缓解。
+
+动态选品 wiki 写入 `data/product-selection-wiki.md`，并由登录后的 `/api/wiki` 读取。公开仓库中的 `docs/product-selection-wiki.md` 只保留模板，不提交本机真实SKU分析结果。
 
 ## 生产接入建议
 
@@ -52,6 +55,12 @@
 
 不要把平台账号、Cookie、Token 或付费数据源密钥放进前端。
 
+## API 配置与风险证据链
+
+- `/api/connectors`：登录后读取/保存本机 `data/connectors.json`。返回给前端时会打码 `apiKey`、`secret`、`token`、`password` 等字段。
+- `/api/risk/analyze`：接收 1688 寻源链接、目标区域、国家/地区和SKU信息。未接入专利、商标、海关案例、文化政策、平台政策和退货争议数据前，只返回核验材料和数据链路，不输出通过/不通过结论。
+- GitHub Pages 只发布前端代码和 `public/config.json` 的后端地址；真实 API key、平台凭证、风险证据源密钥只保存在本机后端。
+
 ## 本机导入字段
 
 `data/vendor-exports/` 支持 CSV 或 JSON 数组。字段名可使用英文或中文别名：
@@ -60,6 +69,7 @@
 |---|---|
 | `date` | 日期，建议 `YYYY-MM-DD` |
 | `regionId` | 区域 ID，例如 `sea`、`north-america`、`western-europe`、`africa` |
+| `countryId` / `countryCode` | 国家/地区，例如 `tw`/`TW`、`sg`/`SG` |
 | `platformId` | 平台 ID，例如 `amazon-us`、`shopee` |
 | `categoryId` | 品类 ID，例如 `home-organization` |
 | `priceTierId` | 价格带 ID，例如 `15-30` |

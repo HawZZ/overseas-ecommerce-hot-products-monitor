@@ -12,4 +12,5 @@ data/audit.log
 data/refresh.log
 data/server.log
 data/vendor-exports/
+data/product-selection-wiki.md
 public/latest-snapshot.json

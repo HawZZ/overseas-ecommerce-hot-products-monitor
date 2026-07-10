@@ -55,6 +55,15 @@
       "name": "东南亚",
       "basis": "SEA-6 marketplace GMV and regional platform GMV excerpts",
       "sourceIds": ["momentum-sea-2026", "cube-sea-2026"],
+      "countries": [
+        { "id": "tw", "code": "TW", "name": "台湾", "default": true, "shopeeDomain": "shopee.tw" },
+        { "id": "vn", "code": "VN", "name": "越南", "shopeeDomain": "shopee.vn" },
+        { "id": "th", "code": "TH", "name": "泰国", "shopeeDomain": "shopee.co.th" },
+        { "id": "sg", "code": "SG", "name": "新加坡", "shopeeDomain": "shopee.sg" },
+        { "id": "my", "code": "MY", "name": "马来西亚", "shopeeDomain": "shopee.com.my" },
+        { "id": "ph", "code": "PH", "name": "菲律宾", "shopeeDomain": "shopee.ph" },
+        { "id": "id", "code": "ID", "name": "印尼", "shopeeDomain": "shopee.co.id" }
+      ],
       "platforms": [
         {
           "rank": 1,
@@ -108,6 +117,11 @@
       "name": "北美",
       "basis": "U.S. retail ecommerce share used as North America proxy until Canada and Mexico feeds are connected",
       "sourceIds": ["statista-us-2025", "forbes-us-ecommerce-2026"],
+      "countries": [
+        { "id": "us", "code": "US", "name": "美国", "default": true },
+        { "id": "ca", "code": "CA", "name": "加拿大" },
+        { "id": "mx", "code": "MX", "name": "墨西哥" }
+      ],
       "platforms": [
         {
           "rank": 1,
@@ -161,6 +175,14 @@
       "name": "西欧",
       "basis": "Western Europe marketplace presence and EU marketplace turnover sources",
       "sourceIds": ["lengow-eu-marketplaces-2026", "globeneewswire-europe-b2c-2025"],
+      "countries": [
+        { "id": "uk", "code": "GB", "name": "英国", "default": true },
+        { "id": "de", "code": "DE", "name": "德国" },
+        { "id": "fr", "code": "FR", "name": "法国" },
+        { "id": "es", "code": "ES", "name": "西班牙" },
+        { "id": "it", "code": "IT", "name": "意大利" },
+        { "id": "nl", "code": "NL", "name": "荷兰" }
+      ],
       "platforms": [
         {
           "rank": 1,
@@ -214,6 +236,13 @@
       "name": "非洲",
       "basis": "ECDB 2025 global retailer ranking cited by marketplace coverage",
       "sourceIds": ["lengow-africa-marketplaces-2026"],
+      "countries": [
+        { "id": "za", "code": "ZA", "name": "南非", "default": true },
+        { "id": "ng", "code": "NG", "name": "尼日利亚" },
+        { "id": "eg", "code": "EG", "name": "埃及" },
+        { "id": "ke", "code": "KE", "name": "肯尼亚" },
+        { "id": "ma", "code": "MA", "name": "摩洛哥" }
+      ],
       "platforms": [
         {
           "rank": 1,

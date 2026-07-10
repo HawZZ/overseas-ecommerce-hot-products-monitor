@@ -148,6 +148,8 @@ main {
 
 .api-card,
 .filter-card,
+.connection-strip,
+.market-focus,
 .panel,
 .workflow-rail article {
   border: 1px solid var(--surface-line);
@@ -157,8 +159,82 @@ main {
 }
 
 .api-card,
-.filter-card {
+.filter-card,
+.connection-strip,
+.market-focus {
   padding: 16px;
+}
+
+.connection-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: end;
+  box-shadow: var(--shadow);
+}
+
+.connection-strip .section-title {
+  margin-bottom: 0;
+}
+
+.page-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.page-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 780;
+  box-shadow: var(--shadow);
+}
+
+.page-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.standalone-filter {
+  box-shadow: var(--shadow);
+}
+
+.market-focus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: var(--shadow);
+}
+
+.market-focus strong,
+.market-focus span {
+  display: block;
+}
+
+.market-focus span {
+  margin-top: 3px;
+  color: var(--accent);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.market-focus p {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .section-title {
@@ -680,7 +756,7 @@ select:focus {
 
 .sourcing-filters {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 9px;
 }
 
@@ -1348,6 +1424,176 @@ select:focus {
   color: var(--accent);
 }
 
+.connector-panel,
+.risk-panel {
+  align-self: start;
+}
+
+.connector-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--muted-strong);
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.connector-status.ready {
+  border-color: rgba(15, 118, 110, 0.28);
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.connector-status.loading {
+  border-color: rgba(180, 83, 9, 0.28);
+  background: var(--warning-weak);
+  color: var(--warning);
+}
+
+.connector-status.error {
+  border-color: rgba(180, 35, 24, 0.28);
+  background: var(--danger-weak);
+  color: var(--danger);
+}
+
+.connector-list,
+.risk-section-list {
+  display: grid;
+  gap: 10px;
+}
+
+.connector-card,
+.risk-section {
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.connector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.toggle-row {
+  display: inline-flex;
+  grid-auto-flow: column;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toggle-row input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.connector-head small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.connector-card p {
+  margin: 0 0 10px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.connector-fields,
+.risk-target {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.save-connectors {
+  margin-top: 12px;
+}
+
+.risk-target {
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.risk-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.risk-context span,
+.risk-caveat {
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.risk-section {
+  display: grid;
+  gap: 9px;
+}
+
+.risk-section > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.risk-section svg {
+  color: var(--warning);
+}
+
+.risk-section strong {
+  font-size: 14px;
+}
+
+.risk-section > div:first-child span {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.risk-section h3 {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.risk-section ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.risk-caveat {
+  margin: 12px 0 0;
+  background: var(--warning-weak);
+}
+
 .gtm-roadmap article {
   display: grid;
   gap: 6px;
@@ -1428,6 +1674,8 @@ select:focus {
   .panel,
   .api-card,
   .filter-card,
+  .connection-strip,
+  .market-focus,
   .metric-strip,
   .workflow-rail article {
     animation: rise-in 360ms ease both;
@@ -1506,13 +1754,16 @@ select:focus {
   .dashboard-grid,
   .detail-grid,
   .source-section,
-  .command-center {
+  .command-center,
+  .connection-strip {
     grid-template-columns: 1fr;
   }
 
   .api-grid,
   .filter-grid,
-  .sourcing-filters {
+  .sourcing-filters,
+  .connector-fields,
+  .risk-target {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1540,6 +1791,7 @@ select:focus {
   .channel-grid,
   .rank-group-grid,
   .sourcing-filters,
+  .page-tabs,
   .summary-grid,
   .cohort-grid,
   .split-notes,
@@ -1562,6 +1814,11 @@ select:focus {
 
   .alert-row p {
     grid-column: 2;
+  }
+
+  .market-focus {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .product-table {
@@ -1588,6 +1845,8 @@ select:focus {
   .panel,
   .api-card,
   .filter-card,
+  .connection-strip,
+  .market-focus,
   .login-card {
     padding: 13px;
   }
@@ -1595,7 +1854,9 @@ select:focus {
   .metric-strip,
   .api-grid,
   .filter-grid,
-  .quality-facts {
+  .quality-facts,
+  .connector-fields,
+  .risk-target {
     grid-template-columns: 1fr;
   }
 

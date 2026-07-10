@@ -30,6 +30,8 @@ let refreshInProgress = false;
 
 const app = express();
 const loginFailures = new Map();
+const connectorsPath = path.resolve(dataDir, "connectors.json");
+const connectorsExamplePath = path.resolve(dataDir, "connectors.example.json");
 
 app.use(
   helmet({
@@ -155,7 +157,7 @@ function isWeakConfiguredValue(value) {
 function validateRuntimeConfig() {
   const weakFields = [
     ["API_TOKEN", process.env.API_TOKEN],
-    ["DASHBOARD_PASSWORD", process.env.DASHBOARD_PASSWORD || process.env.MONITOR_PASSWORD],
+    ["DASHBOARD_PASSWORD", process.env.DASHBOARD_PASSWORD || process.env.MONITOR_PASSWORD || process.env.API_TOKEN],
     ["SESSION_SECRET", process.env.SESSION_SECRET || process.env.MONITOR_SECRET_KEY]
   ].filter(([, value]) => isWeakConfiguredValue(value));
 
@@ -190,6 +192,77 @@ async function readSnapshot() {
   const snapshotPath = path.resolve(dataDir, "latest-snapshot.json");
   const text = await fs.readFile(snapshotPath, "utf8");
   return JSON.parse(text);
+}
+
+async function readJsonIfExists(filePath, fallback = null) {
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    return JSON.parse(text);
+  } catch (error) {
+    if (error.code === "ENOENT") return fallback;
+    throw error;
+  }
+}
+
+async function readConnectors() {
+  return readJsonIfExists(connectorsPath, await readJsonIfExists(connectorsExamplePath, {}));
+}
+
+function isSecretField(key) {
+  return /(api.?key|secret|token|password|credential|client.?secret|refresh.?token)/iu.test(key);
+}
+
+function maskSecrets(value) {
+  if (Array.isArray(value)) return value.map(maskSecrets);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    isSecretField(key) ? (item ? "********" : "") : maskSecrets(item)
+  ]));
+}
+
+function mergeSecretPlaceholders(nextValue, previousValue) {
+  if (Array.isArray(nextValue)) return nextValue.map((item, index) => mergeSecretPlaceholders(item, previousValue?.[index]));
+  if (!nextValue || typeof nextValue !== "object") return nextValue;
+
+  return Object.fromEntries(Object.entries(nextValue).map(([key, item]) => {
+    if (isSecretField(key) && item === "********") {
+      return [key, previousValue?.[key] || ""];
+    }
+    return [key, mergeSecretPlaceholders(item, previousValue?.[key])];
+  }));
+}
+
+async function writeConnectors(nextConnectors) {
+  const previous = await readConnectors();
+  const merged = Object.fromEntries(Object.entries(nextConnectors || {}).map(([id, connector]) => [
+    id,
+    mergeSecretPlaceholders(connector, previous?.[id])
+  ]));
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.writeFile(connectorsPath, `${JSON.stringify(merged, null, 2)}\n`);
+  return merged;
+}
+
+async function runRefresh(req) {
+  if (refreshInProgress) return { accepted: false, reason: "Refresh already in progress" };
+  refreshInProgress = true;
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, ["scripts/update-data.js"], {
+    cwd: rootDir,
+    stdio: "ignore",
+    env: process.env
+  });
+  child.on("exit", (code) => {
+    refreshInProgress = false;
+    void writeAudit("refresh_completed", req, { code, user: req.auth?.sub || null });
+  });
+  child.on("error", (error) => {
+    refreshInProgress = false;
+    void writeAudit("refresh_failed", req, { message: error.message, user: req.auth?.sub || null });
+  });
+  void writeAudit("refresh_started", req, { user: req.auth?.sub || null });
+  return { accepted: true };
 }
 
 app.get("/health", (_req, res) => {
@@ -241,37 +314,118 @@ app.get("/api/snapshot", requireSession, async (_req, res, next) => {
 
 app.get("/api/wiki", requireSession, async (_req, res, next) => {
   try {
-    const wiki = await fs.readFile(path.resolve(rootDir, "docs", "product-selection-wiki.md"), "utf8");
+    const wikiPath = path.resolve(dataDir, "product-selection-wiki.md");
+    const fallbackWikiPath = path.resolve(rootDir, "docs", "product-selection-wiki.md");
+    const wiki = await fs.readFile(wikiPath, "utf8").catch((error) => {
+      if (error.code === "ENOENT") return fs.readFile(fallbackWikiPath, "utf8");
+      throw error;
+    });
     res.type("text/markdown").send(wiki);
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/refresh", requireSession, async (_req, res, next) => {
-  if (refreshInProgress) {
-    res.status(409).json({ error: "Refresh already in progress" });
-    return;
-  }
-
-  refreshInProgress = true;
+app.get("/api/connectors", requireSession, async (_req, res, next) => {
   try {
-    const { spawn } = await import("node:child_process");
-    const child = spawn(process.execPath, ["scripts/update-data.js"], {
-      cwd: rootDir,
-      stdio: "ignore",
-      env: process.env
+    const connectors = await readConnectors();
+    res.json({
+      connectors: maskSecrets(connectors),
+      savedLocally: true,
+      secretsMasked: true
     });
-    child.on("exit", (code) => {
-      refreshInProgress = false;
-      void writeAudit("refresh_completed", _req, { code, user: _req.auth?.sub || null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/connectors", requireSession, async (req, res, next) => {
+  try {
+    const connectors = await writeConnectors(req.body?.connectors || {});
+    const refresh = await runRefresh(req);
+    void writeAudit("connectors_saved", req, {
+      user: req.auth?.sub || null,
+      connectorIds: Object.keys(connectors)
     });
-    child.on("error", (error) => {
-      refreshInProgress = false;
-      void writeAudit("refresh_failed", _req, { message: error.message, user: _req.auth?.sub || null });
+    res.status(202).json({
+      ok: true,
+      refresh,
+      connectors: maskSecrets(connectors)
     });
-    void writeAudit("refresh_started", _req, { user: _req.auth?.sub || null });
-    res.status(202).json({ accepted: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/risk/analyze", requireSession, async (req, res, next) => {
+  try {
+    const connectors = await readConnectors();
+    const enabledRiskConnectors = Object.entries(connectors || {})
+      .filter(([id, connector]) => connector?.enabled && /risk|patent|trademark|customs|culture|policy/iu.test(`${id} ${connector.type || ""}`))
+      .map(([id]) => id);
+    const { title, categoryName, sourcingUrl, regionName, countryName } = req.body || {};
+    const hasSourcingUrl = /^https?:\/\/(.*\.)?1688\.com\//iu.test(String(sourcingUrl || ""));
+
+    res.json({
+      status: enabledRiskConnectors.length && hasSourcingUrl ? "evidence-required" : "needs-configuration",
+      title: title || "未选择SKU",
+      categoryName: categoryName || "",
+      targetMarket: [regionName, countryName].filter(Boolean).join(" / "),
+      sourcingUrl: sourcingUrl || "",
+      evidenceConnectors: enabledRiskConnectors,
+      sections: [
+        {
+          id: "patent-ip",
+          title: "专利/商标/外观侵权核验",
+          status: enabledRiskConnectors.length && hasSourcingUrl ? "waiting-for-evidence" : "needs-data-source",
+          materials: [
+            "1688商品链接、商品主图、详情页截图和供应商主体信息",
+            "供应商提供的品牌授权书、专利/外观设计/商标权属或不侵权声明",
+            "目标国家/地区的专利、外观设计、商标检索结果和检索日期",
+            "样品实拍、包装/说明书/Logo/型号清单，用于比对是否仿冒或近似",
+            "进口申报品名、HS编码、材质、用途和合规证书"
+          ],
+          dataNeeds: ["当地专利/外观设计库", "当地商标库", "平台禁限售政策", "海关扣押/侵权案例库"]
+        },
+        {
+          id: "culture",
+          title: "宗教、文化、习俗冲突核验",
+          status: enabledRiskConnectors.length && hasSourcingUrl ? "waiting-for-evidence" : "needs-data-source",
+          materials: [
+            "商品图案、颜色、文案、人物形象、节日场景和包装素材",
+            "目标国家/地区宗教、民族、政治符号、禁忌图案和节庆习俗规则",
+            "平台当地内容政策、广告政策和买家投诉/下架案例",
+            "本地语言标题、说明书、警示语和客服话术"
+          ],
+          dataNeeds: ["目标市场文化政策资料", "平台内容/广告政策", "本地化审核记录", "历史下架/退回案例"]
+        },
+        {
+          id: "returns-fraud",
+          title: "退货、空包、售后与货损风险",
+          status: "needs-marketplace-data",
+          materials: [
+            "该SKU历史退货率、退款原因、拒付/争议率和空包案例",
+            "平台当地退货政策、消费者保护规则和物流签收/称重证据",
+            "出库称重、装箱视频、序列号/防拆标签和签收凭证留存方案"
+          ],
+          dataNeeds: ["卖家后台退货原因", "物流签收和重量数据", "平台争议/申诉记录"]
+        }
+      ],
+      caveat: "未接入目标市场权威专利、商标、文化政策、平台政策和海关/售后案例数据前，本接口只给出核验材料和数据链路，不给出通过/不通过结论。"
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/refresh", requireSession, async (_req, res, next) => {
+  try {
+    const refresh = await runRefresh(_req);
+    if (!refresh.accepted) {
+      res.status(409).json({ error: refresh.reason });
+      return;
+    }
+    res.status(202).json(refresh);
   } catch (error) {
     refreshInProgress = false;
     next(error);

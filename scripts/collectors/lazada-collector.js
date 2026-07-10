@@ -110,6 +110,10 @@ export async function collectLazada() {
   const errors = [];
 
   for (const country of seaCountries) {
+    if (!country.lazadaDomain) {
+      console.log(`\n  [lazada] ${country.name}: Lazada未覆盖，跳过`);
+      continue;
+    }
     for (const category of categories) {
       console.log(`\n  [lazada] ${country.lazadaDomain} / ${category.name}`);
       try {

@@ -5,7 +5,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { vendorExportsDir, inferTierId, categories } from "./config.js";
+import { vendorExportsDir, inferTierId } from "./config.js";
 
 const normalizedDir = path.resolve(vendorExportsDir, "normalized");
 
@@ -44,30 +44,14 @@ function ratingToSentiment(rating) {
   return Math.round(((rating - 3) / 2) * 100) / 100;
 }
 
-/**
- * 估算成单率 (基于品类和价格带的合理范围)
- */
-function estimateConversionRate(categoryId, priceUsd) {
-  const baseByCategory = {
-    "mobile-accessories": 0.06,
-    "beauty-tools": 0.05,
-    "home-organization": 0.07,
-    "pet-supplies": 0.06,
-    "fitness-outdoor": 0.04,
-    "consumer-electronics": 0.03,
-    "small-appliances": 0.05
-  };
-  const base = baseByCategory[categoryId] || 0.05;
-  const priceFactor = priceUsd < 15 ? 1.2 : priceUsd < 50 ? 1.0 : 0.8;
-  return Math.round(base * priceFactor * 10000) / 10000;
-}
-
 function normalizeProductRow(raw, searchIndex, sourceName) {
   const price = Number(raw.price) || 0;
   const priceTierId = raw.priceTierId || inferTierId(price);
   const countryCode = (raw.countryCode || "SG").toLowerCase();
   const categoryKey = `${countryCode}:${raw.categoryId}`;
   const search = searchIndex[categoryKey] || {};
+  const importedSearchVolume = Number(raw.searchVolume) || 0;
+  const importedConversionRate = Number(raw.conversionRate) || 0;
 
   return {
     title: raw.title || "未命名导入SKU",
@@ -77,12 +61,19 @@ function normalizeProductRow(raw, searchIndex, sourceName) {
     priceTierId: priceTierId || "",
     date: raw.collectedAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
     salesUnits: Number(raw.salesUnits) || 0,
-    searchVolume: search.searchVolume || Math.round((Number(raw.salesUnits) || 100) * 18),
-    conversionRate: estimateConversionRate(raw.categoryId, price),
+    searchVolume: search.searchVolume || importedSearchVolume,
+    conversionRate: importedConversionRate > 1 ? importedConversionRate / 100 : importedConversionRate,
     averageOrderValue: price,
     sentiment: ratingToSentiment(Number(raw.rating)),
     reviewVolume: Number(raw.reviewVolume) || 0,
     sourceName,
+    metricStatus: {
+      salesUnits: raw.salesUnits == null ? "missing" : "observed",
+      searchVolume: search.searchVolume ? "google-trends" : importedSearchVolume ? "observed" : "missing",
+      conversionRate: importedConversionRate ? "observed" : "missing",
+      averageOrderValue: price ? "observed" : "missing",
+      sentiment: raw.rating ? "rating-derived" : "missing"
+    },
     _raw: {
       itemId: raw.itemId,
       platformDomain: raw.platformDomain,

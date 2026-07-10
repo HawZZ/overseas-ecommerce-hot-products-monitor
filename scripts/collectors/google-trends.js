@@ -6,8 +6,6 @@ import fs from "node:fs/promises";
 import googleTrends from "google-trends-api";
 import { categories, seaCountries, vendorExportsDir, delay } from "./config.js";
 
-const TIME_RANGE = "today 3-m";
-
 async function fetchInterestOverTime(keyword, countryCode) {
   try {
     const result = await googleTrends.interestOverTime({
