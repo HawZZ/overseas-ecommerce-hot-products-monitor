@@ -127,11 +127,13 @@ function formatNumber(value) {
 }
 
 function formatPercent(value, digits = 1) {
-  return `${((Number(value) || 0) * 100).toFixed(digits)}%`;
+  if (value == null || !Number.isFinite(Number(value))) return "缺失";
+  return `${(Number(value) * 100).toFixed(digits)}%`;
 }
 
 function formatTrend(value, suffix = "%") {
-  const numeric = Number(value) || 0;
+  if (value == null || !Number.isFinite(Number(value))) return "缺失";
+  const numeric = Number(value);
   const sign = numeric > 0 ? "+" : "";
   return `${sign}${numeric.toFixed(1)}${suffix}`;
 }
@@ -519,6 +521,14 @@ function useSnapshot() {
     return response.status === 204 ? null : response.json();
   }
 
+  async function collectorApi(path, options = {}) {
+    if (!sessionToken) throw new Error("请先登录后再管理采集器");
+    const { response } = await requestWithFallback(path, { ...options, token: sessionToken });
+    const body = response.status === 204 ? null : await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body?.error || `采集器请求返回 ${response.status}`);
+    return body;
+  }
+
   return {
     snapshot,
     source,
@@ -539,7 +549,8 @@ function useSnapshot() {
     loadConnectors,
     saveConnectors,
     analyzeRisk,
-    titleApi
+    titleApi,
+    collectorApi
   };
 }
 
@@ -564,7 +575,8 @@ function App() {
     loadConnectors,
     saveConnectors,
     analyzeRisk,
-    titleApi
+    titleApi,
+    collectorApi
   } = useSnapshot();
   const [activePage, setActivePage] = useState("trends");
   const [regionId, setRegionId] = useState("all");
@@ -695,6 +707,7 @@ function App() {
             selectedRegion={selectedRegion}
             selectedCountry={selectedCountry}
             analyzeRisk={analyzeRisk}
+            collectorApi={collectorApi}
           />
         )}
 
@@ -866,6 +879,7 @@ function TrendsPage({ snapshot, products, selectedProduct, selectedProductId, on
         <ProductDetail product={selectedProduct} />
       </section>
       <RankGroupsPanel snapshot={snapshot} />
+      <TaiwanCollectorRankings snapshot={snapshot} />
     </>
   );
 }
@@ -909,7 +923,7 @@ function FourPPage({ snapshot, selectedProduct }) {
   );
 }
 
-function ApiRiskPage({ snapshot, selectedProduct, loadConnectors, saveConnectors, analyzeRisk }) {
+function ApiRiskPage({ snapshot, selectedProduct, loadConnectors, saveConnectors, analyzeRisk, collectorApi }) {
   return (
     <>
       <section className="dashboard-grid">
@@ -917,6 +931,7 @@ function ApiRiskPage({ snapshot, selectedProduct, loadConnectors, saveConnectors
         <RiskAnalysisPanel product={selectedProduct} snapshot={snapshot} analyzeRisk={analyzeRisk} />
       </section>
       <section className="source-section">
+        <ShopeeCollectorPanel collectorApi={collectorApi} snapshot={snapshot} />
         <SourcePanel snapshot={snapshot} />
         <SecurityPanel snapshot={snapshot} />
       </section>
@@ -1691,11 +1706,40 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
   );
 }
 
+function TaiwanCollectorRankings({ snapshot }) {
+  const [mode, setMode] = useState("sales");
+  const collector = snapshot.taiwanCollector || {};
+  const groups = snapshot.taiwanRankings?.[mode] || [];
+  const stateLabel = { ready: "可用", stale: "已过期", blocked: "采集受阻", "not-initialized": "未初始化" }[collector.state] || "未知";
+  return (
+    <section className="panel rank-groups-panel">
+      <div className="panel-heading"><div><h2>Shopee 台湾公开页面样本榜单</h2><p>仅展示本机 Chrome 实际观测结果。热销榜沿用平台返回顺序；综合榜只在同类目内有效，不跨类目拼接。</p></div><span className={`connector-status ${collector.state}`}>{stateLabel}</span></div>
+      <div className="metric-tabs compact-tabs"><button className={mode === "sales" ? "active" : ""} onClick={() => setMode("sales")} type="button">热销榜</button><button className={mode === "relevance" ? "active" : ""} onClick={() => setMode("relevance")} type="button">综合榜</button></div>
+      {!groups.length ? <div className="empty-state">台湾采集器尚未返回可展示商品。完成本机 Chrome 初始化、配对和已确认类目映射后，榜单会保留每次真实采集点。</div> : <div className="rank-group-grid">{groups.map((group) => <article className="rank-group-card" key={group.id}><div className="rank-group-head"><ListChecks size={18} weight="duotone" /><strong>{group.categoryName} / {group.label}</strong></div><div className="rank-mini-list">{group.products.map((product) => <div key={product.id}><span className="rank-mark">{product.rank}</span><span><strong>{product.title}</strong><small>{product.sourceMeta?.sold == null ? "Shopee sold 字段缺失" : `Shopee sold 字段：${formatNumber(product.sourceMeta.sold)}`} / 历史累计：{product.sourceMeta?.historicalSold == null ? "缺失" : formatNumber(product.sourceMeta.historicalSold)}</small></span><em>#{product.sourceRank}</em></div>)}</div></article>)}</div>}
+    </section>
+  );
+}
+
+function ShopeeCollectorPanel({ collectorApi, snapshot }) {
+  const [status, setStatus] = useState(snapshot.taiwanCollector || {});
+  const [map, setMap] = useState([]);
+  const [pairing, setPairing] = useState(null);
+  const [message, setMessage] = useState("采集器只在用户 macOS 的专用 Chrome Profile 中运行。");
+  const reload = useCallback(async () => {
+    const [source, categories] = await Promise.all([collectorApi("/api/collector/shopee-tw/status"), collectorApi("/api/collector/shopee-tw/category-map")]);
+    setStatus({ ...source.status, clients: source.clients || [] }); setMap(categories.categories || []);
+  }, [collectorApi]);
+  useEffect(() => { reload().catch((error) => setMessage(error.message)); }, [reload]);
+  async function createPairing() { try { const value = await collectorApi("/api/collector/pairing-codes", { method: "POST" }); setPairing(value); setMessage("一次性配对码已生成，仅在 5 分钟内有效。"); } catch (error) { setMessage(error.message); } }
+  async function revoke(id) { try { await collectorApi(`/api/collector/clients/${id}`, { method: "DELETE" }); await reload(); setMessage("采集客户端已撤销。"); } catch (error) { setMessage(error.message); } }
+  return <section className="panel connector-panel"><div className="panel-heading"><div><h2>Shopee 台湾 Chrome/CDP 采集器</h2><p>不读取 Cookie 或请求头，不破解签名、不处理验证码。出现验证或限流时自动停下并保留上一批真实数据。</p></div><span className={`connector-status ${status.state || "idle"}`}>{status.state || "not-initialized"}</span></div><div className="connector-list"><p>{message}</p><p>最近成功：{status.lastSuccessAt || "尚无"}；可排名 SKU：{status.rankableSkuCount || 0}；行拒绝率：{formatPercent(status.rejectedRate || 0)}</p><button className="primary-button" type="button" onClick={createPairing}>生成 macOS 配对码</button>{pairing && <label>一次性配对码<input readOnly value={pairing.code} /><small>到期：{pairing.expiresAt}</small></label>}<label>已确认类目映射（{map.length}）<textarea readOnly rows="4" value={map.map((entry) => `${entry.categoryId}: ${entry.label}`).join("\n") || "尚未确认。请在本机调用接口保存七个内部品类与 Shopee 台湾类目链接的映射。"} /></label>{status.clients?.map((client) => <div className="connector-card" key={client.id}><strong>{client.name}</strong><small>{client.scope} / 到期 {client.expiresAt}</small>{!client.revokedAt && <button className="secondary-button" type="button" onClick={() => revoke(client.id)}>撤销</button>}</div>)}</div></section>;
+}
+
 function RankGroupsPanel({ snapshot }) {
   const [groupType, setGroupType] = useState("region-platform-price-tier");
   const groups = useMemo(() => {
     const rankGroups = snapshot.rankGroups || [];
-    return rankGroups.filter((group) => group.type === groupType && group.products?.length);
+    return rankGroups.filter((group) => group.type === groupType && (group.products?.length || (groupType === "region-country" && group.countryCode === "TW")));
   }, [snapshot.rankGroups, groupType]);
   const selectedGroups = groups.slice(0, groupType === "region-platform-price-tier" ? 6 : 8);
 
@@ -1722,6 +1766,7 @@ function RankGroupsPanel({ snapshot }) {
               <strong>{group.label}</strong>
             </div>
             <div className="rank-mini-list">
+              {!group.products.length && <div className="empty-state">台湾卡片已保留，等待 CDP 采集器上传真实商品。</div>}
               {group.products.slice(0, 10).map((product) => (
                 <div key={product.id}>
                   <span className="rank-mark">{product.rank}</span>
@@ -1764,7 +1809,7 @@ function ProductDetail({ product }) {
   const activeMetric = metricOptions.find((option) => option.id === metric);
   const chartRows = product.trend.map((point) => ({
     ...point,
-    conversionRate: point.conversionRate * 100
+    conversionRate: point.conversionRate == null ? null : point.conversionRate * 100
   }));
   const cohortRows = product.summary.cohorts.map((cohort) => ({
     ...cohort,

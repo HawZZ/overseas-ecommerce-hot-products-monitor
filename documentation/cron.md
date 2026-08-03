@@ -6,14 +6,15 @@ Runtime values below were checked on 2026-08-03 UTC.
 
 | Job | Actual schedule/trigger | Function | Secrets/data | Retry/idempotency |
 |---|---|---|---|---|
-| Snapshot refresh timer | systemd: 5 min after boot, then every 6h | `npm run refresh` | `/etc/overseas-ecommerce-monitor.env`, local data | Persistent timer retries only at next schedule; direct overwrite, not atomic |
+| Snapshot refresh timer | systemd: 5 min after boot, then every 12h | `npm run refresh` | `/etc/overseas-ecommerce-monitor.env`, local data | Persistent timer retries only at next schedule; collector uploads trigger an additional snapshot rebuild |
+| Shopee TW CDP collector | user macOS launchd: every 12h | `collector-client/collector.mjs run` | local Chrome profile and scoped collector token | Stops on platform verification, rate limits or schema drift; preserves previous valid batch |
 | Pages Tunnel sync timer | systemd: 3 min after boot, then every 5m | `scripts/sync-pages-tunnel-url.sh` | Git credential available to OS user; public URL | URL/health comparison avoids duplicate commit; Git/network failures wait for next run |
 | API manual refresh | authenticated `POST /api/refresh` | spawn generator | inherited API environment | In-process lock only; 202 accepted before completion |
 | Connector-save refresh | authenticated connector POST | write config then spawn generator | connector values and inherited env | Same in-process lock; config write precedes refresh |
 | Standalone scheduler | `npm run scheduler`; default 24h unless env overrides | collect all, then refresh | proxy/provider access and local data | Continues refresh after collector failure; long-running interval |
 | GitHub Pages | push main or manual dispatch | npm install, build, deploy | GitHub Pages/OIDC and optional public build URL | Actions rerun; no behavior-test gate |
 
-The snapshot/server environment reports a 12-hour cadence, which currently does not match the 6-hour systemd timer or the standalone scheduler's 24-hour code default.
+The server snapshot cadence is 12 hours. The macOS collector is independent: it supplies a new Taiwan batch only when the user's Chrome profile is initialized and available.
 
 ## Operation
 

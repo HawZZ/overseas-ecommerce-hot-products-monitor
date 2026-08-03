@@ -579,9 +579,10 @@ function readField(row, names) {
   return "";
 }
 
-function toNumber(value) {
-  const numeric = Number(String(value ?? "").replace(/[$,%\s,]/gu, ""));
-  return Number.isFinite(numeric) ? numeric : 0;
+function toNullableNumber(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const numeric = Number(String(value).replace(/[$,%\s,]/gu, ""));
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function inferTierId(price) {
@@ -590,25 +591,31 @@ function inferTierId(price) {
 }
 
 function normalizeVendorRow(row, sourceName) {
-  const price = toNumber(readField(row, ["price", "averageOrderValue", "aov", "客单价", "售价"]));
+  const price = toNullableNumber(readField(row, ["price", "averageOrderValue", "aov", "客单价", "售价"]));
   const rawCountryCode = row._raw?.countryCode || row.countryCode || row.country || "";
   return {
-    sourceName,
+    sourceName: row.sourceName || sourceName,
     title: readField(row, ["title", "sku", "product", "商品", "产品"]) || "未命名导入SKU",
     regionId: readField(row, ["regionId", "region", "区域"]),
     platformId: readField(row, ["platformId", "platform", "平台"]),
     countryCode: readField(row, ["countryCode", "country", "market", "国家", "地区"]) || rawCountryCode,
     countryId: readField(row, ["countryId", "marketId", "国家ID", "地区ID"]),
     categoryId: readField(row, ["categoryId", "category", "品类"]),
-    priceTierId: readField(row, ["priceTierId", "tier", "价格带"]) || inferTierId(price),
+    priceTierId: readField(row, ["priceTierId", "tier", "价格带"]) || inferTierId(price || 0),
     date: readField(row, ["date", "日期"]),
-    salesUnits: toNumber(readField(row, ["salesUnits", "sales", "units", "销量"])),
-    searchVolume: toNumber(readField(row, ["searchVolume", "searches", "search", "搜索量"])),
-    conversionRate: toNumber(readField(row, ["conversionRate", "conversion", "cvr", "成单率"])),
+    salesUnits: toNullableNumber(readField(row, ["salesUnits", "sales", "units", "销量"])),
+    historicalSold: toNullableNumber(readField(row, ["historicalSold"])),
+    searchVolume: toNullableNumber(readField(row, ["searchVolume", "searches", "search", "搜索量"])),
+    conversionRate: toNullableNumber(readField(row, ["conversionRate", "conversion", "cvr", "成单率"])),
     averageOrderValue: price,
-    reviewSentiment: toNumber(readField(row, ["sentiment", "reviewSentiment", "口碑分"])),
-    reviewVolume: toNumber(readField(row, ["reviewVolume", "reviews", "评论数"])),
-    metricStatus: row.metricStatus || {}
+    reviewSentiment: toNullableNumber(readField(row, ["sentiment", "reviewSentiment", "口碑分"])),
+    reviewVolume: toNullableNumber(readField(row, ["reviewVolume", "reviews", "评论数"])),
+    rankMode: readField(row, ["rankMode"]),
+    sourceRank: toNullableNumber(readField(row, ["sourceRank"])),
+    itemId: row._raw?.itemId || row.itemId || "",
+    shopId: row._raw?.shopId || row.shopId || "",
+    metricStatus: row.metricStatus || {},
+    raw: row._raw || {}
   };
 }
 
@@ -732,31 +739,40 @@ function summarizeTrend(points) {
   const first30 = points.slice(0, 30);
   const middle30 = points.slice(30, 60);
   const last30 = points.slice(-30);
-  const sum = (rows, key) => rows.reduce((total, row) => total + row[key], 0);
-  const avg = (rows, key) => sum(rows, key) / rows.length;
-  const pctChange = (start, end) => round(((end - start) / Math.max(1, start)) * 100, 1);
+  const values = (rows, key) => rows.map((row) => row[key]).filter((value) => Number.isFinite(value));
+  const sum = (rows, key) => {
+    const observed = values(rows, key);
+    return observed.length ? observed.reduce((total, value) => total + value, 0) : null;
+  };
+  const avg = (rows, key) => {
+    const observed = values(rows, key);
+    return observed.length ? observed.reduce((total, value) => total + value, 0) / observed.length : null;
+  };
+  const pctChange = (start, end) => (start == null || end == null ? null : round(((end - start) / Math.max(1, start)) * 100, 1));
   const sales90d = sum(points, "salesUnits");
   const search90d = sum(points, "searchVolume");
   const conversionNow = avg(last14, "conversionRate");
   const aovNow = avg(last14, "averageOrderValue");
   const salesChange = pctChange(sum(first14, "salesUnits"), sum(last14, "salesUnits"));
   const searchChange = pctChange(sum(first14, "searchVolume"), sum(last14, "searchVolume"));
-  const conversionChange = round((avg(last14, "conversionRate") - avg(first14, "conversionRate")) * 100, 2);
+  const lastConversion = avg(last14, "conversionRate");
+  const firstConversion = avg(first14, "conversionRate");
+  const conversionChange = lastConversion == null || firstConversion == null ? null : round((lastConversion - firstConversion) * 100, 2);
   const aovChange = pctChange(avg(first14, "averageOrderValue"), avg(last14, "averageOrderValue"));
 
   return {
     sales90d,
     search90d,
-    conversionRate: round(conversionNow, 4),
-    averageOrderValue: round(aovNow, 2),
+    conversionRate: conversionNow == null ? null : round(conversionNow, 4),
+    averageOrderValue: aovNow == null ? null : round(aovNow, 2),
     salesChange,
     searchChange,
     conversionChange,
     aovChange,
     cohorts: [
-      { label: "第1-30天", salesUnits: sum(first30, "salesUnits"), searchVolume: sum(first30, "searchVolume"), conversionRate: round(avg(first30, "conversionRate"), 4) },
-      { label: "第31-60天", salesUnits: sum(middle30, "salesUnits"), searchVolume: sum(middle30, "searchVolume"), conversionRate: round(avg(middle30, "conversionRate"), 4) },
-      { label: "第61-90天", salesUnits: sum(last30, "salesUnits"), searchVolume: sum(last30, "searchVolume"), conversionRate: round(avg(last30, "conversionRate"), 4) }
+      { label: "第1-30天", salesUnits: sum(first30, "salesUnits"), searchVolume: sum(first30, "searchVolume"), conversionRate: avg(first30, "conversionRate") == null ? null : round(avg(first30, "conversionRate"), 4) },
+      { label: "第31-60天", salesUnits: sum(middle30, "salesUnits"), searchVolume: sum(middle30, "searchVolume"), conversionRate: avg(middle30, "conversionRate") == null ? null : round(avg(middle30, "conversionRate"), 4) },
+      { label: "第61-90天", salesUnits: sum(last30, "salesUnits"), searchVolume: sum(last30, "searchVolume"), conversionRate: avg(last30, "conversionRate") == null ? null : round(avg(last30, "conversionRate"), 4) }
     ]
   };
 }
@@ -1002,10 +1018,10 @@ function buildImportedTrend(rows) {
     const row = rowsByDate.get(date);
     return {
       date,
-      salesUnits: Math.max(0, Math.round(row?.salesUnits || 0)),
-      searchVolume: Math.max(0, Math.round(row?.searchVolume || 0)),
-      conversionRate: row?.conversionRate ? round(row.conversionRate > 1 ? row.conversionRate / 100 : row.conversionRate, 4) : 0,
-      averageOrderValue: row?.averageOrderValue ? round(row.averageOrderValue, 2) : 0,
+      salesUnits: row?.salesUnits == null ? null : Math.max(0, Math.round(row.salesUnits)),
+      searchVolume: row?.searchVolume == null ? null : Math.max(0, Math.round(row.searchVolume)),
+      conversionRate: row?.conversionRate == null ? null : round(row.conversionRate > 1 ? row.conversionRate / 100 : row.conversionRate, 4),
+      averageOrderValue: row?.averageOrderValue == null ? null : round(row.averageOrderValue, 2),
       observed: Boolean(row)
     };
   });
@@ -1022,7 +1038,8 @@ function buildImportedProducts({ vendorRows, platformSources }) {
     if (!region || !platform || !tier) continue;
 
     const countryKey = country?.id || "regional";
-    const key = `${region.id}:${countryKey}:${platform.id}:${tier.id}:${category.id}:${row.title}`;
+    const stableId = row.itemId || row.title;
+    const key = `${region.id}:${countryKey}:${platform.id}:${tier.id}:${category.id}:${stableId}`;
     if (!groups.has(key)) {
       groups.set(key, { key, region, country, platform, tier, category, title: row.title, rows: [] });
     }
@@ -1092,6 +1109,14 @@ function buildImportedProducts({ vendorRows, platformSources }) {
           return acc;
         }, {}),
         caveat: "本机授权导入/API采集数据；缺失日期为空值占位，不代表真实零销量。"
+      },
+      sourceMeta: {
+        itemId: rows.find((row) => row.itemId)?.itemId || "",
+        shopId: rows.find((row) => row.shopId)?.shopId || "",
+        sold: rows.find((row) => row.salesUnits != null)?.salesUnits ?? null,
+        historicalSold: rows.find((row) => row.historicalSold != null)?.historicalSold ?? null,
+        rankMode: rows.find((row) => row.rankMode)?.rankMode || "",
+        sourceRank: rows.find((row) => row.sourceRank != null)?.sourceRank ?? null
       },
       summary,
       pricing,
@@ -1327,6 +1352,59 @@ function buildRankGroups(platformSources, products) {
   return groups;
 }
 
+function normalizeTaiwanCollectorStatus(value = {}) {
+  const lastSuccessAt = value.lastSuccessAt || null;
+  const ageMs = lastSuccessAt ? Date.now() - Date.parse(lastSuccessAt) : null;
+  const state = value.state === "ready" && ageMs != null && ageMs > 24 * 60 * 60 * 1000 ? "stale" : value.state || "not-initialized";
+  return {
+    state,
+    lastAttemptAt: value.lastAttemptAt || null,
+    lastSuccessAt,
+    lastError: value.lastError || null,
+    rowCount: Number(value.rowCount) || 0,
+    rankableSkuCount: Number(value.rankableSkuCount) || 0,
+    rejectedCount: Number(value.rejectedCount) || 0,
+    rejectedRate: Number(value.rejectedRate) || 0,
+    fx: value.fx ? { observedAt: value.fx.observedAt || null, provider: value.fx.provider || "", rate: Number(value.fx.rate) || null } : null,
+    rankings: value.rankings || { sales: {}, relevance: {} },
+    categoryMapUpdatedAt: value.categoryMapUpdatedAt || null,
+    updatedAt: value.updatedAt || null
+  };
+}
+
+function buildTaiwanCollectorRankings(status, products) {
+  const byItem = new Map(products
+    .filter((product) => product.regionId === "sea" && product.countryId === "tw" && product.platformId === "shopee")
+    .map((product) => [`${product.sourceMeta?.shopId || ""}:${product.sourceMeta?.itemId || ""}`, product]));
+
+  return Object.fromEntries(["sales", "relevance"].map((mode) => [mode, Object.entries(status.rankings?.[mode] || {}).map(([categoryId, entries]) => {
+    const category = categoryPool.find((entry) => entry.id === categoryId);
+    return {
+      id: `shopee-tw:${mode}:${categoryId}`,
+      categoryId,
+      categoryName: category?.name || categoryId,
+      mode,
+      label: mode === "sales" ? "热销排序" : "综合排序",
+      products: entries
+        .map((entry) => ({ product: byItem.get(entry.itemKey), sourceRank: entry.sourceRank }))
+        .filter((entry) => entry.product)
+        .map(({ product, sourceRank }) => ({ ...compactRankProduct(product, sourceRank - 1), rank: sourceRank, sourceRank, sourceMeta: product.sourceMeta }))
+    };
+  })]));
+}
+
+function buildTaiwanCollectorAlerts(status) {
+  if (status.state === "not-initialized") {
+    return [{ id: "shopee-tw-not-initialized", severity: "info", title: "Shopee台湾采集器未初始化", detail: "完成本机Chrome配对和类目映射后才会生成台湾榜单。", source: "shopee-tw-cdp" }];
+  }
+  const alerts = [];
+  if (status.state === "blocked") alerts.push({ id: "shopee-tw-blocked", severity: "high", title: "Shopee台湾采集受阻", detail: "本机采集器已停止，本轮未覆盖最后一份有效数据。请在Chrome中完成必要人工验证。", source: "shopee-tw-cdp" });
+  if (status.state === "stale") alerts.push({ id: "shopee-tw-stale", severity: "high", title: "Shopee台湾数据超过24小时", detail: "请检查本机采集器、Chrome Profile和网络状态。", source: "shopee-tw-cdp" });
+  if (status.state === "ready" && status.rankableSkuCount === 0) alerts.push({ id: "shopee-tw-zero-rankable", severity: "medium", title: "Shopee台湾无可排名SKU", detail: "最新批次缺少可用的Shopee销量字段或商品行。", source: "shopee-tw-cdp" });
+  if (status.rejectedRate > 0.1) alerts.push({ id: "shopee-tw-rejected-rows", severity: "medium", title: "Shopee台湾批次拒绝率偏高", detail: `本轮拒绝率${Math.round(status.rejectedRate * 100)}%，请检查类目映射和响应结构。`, source: "shopee-tw-cdp" });
+  return alerts;
+}
+
 function buildWikiSignals(products) {
   return categoryPool.map((category) => {
     const categoryProducts = products.filter((product) => product.categoryId === category.id);
@@ -1546,6 +1624,7 @@ async function generateSnapshot(platformSources) {
   const vendorImport = await loadVendorExports(connectors);
   const dataQuality = buildDataQuality({ connectors, vendorImport });
   const products = buildImportedProducts({ vendorRows: vendorImport.rows, platformSources: enrichedPlatformSources });
+  const taiwanCollector = normalizeTaiwanCollectorStatus(await readJsonIfExists(path.resolve(dataDir, "collector", "shopee-tw", "status.json"), {}));
   if (allowSyntheticDemo && products.length === 0) {
     for (const region of enrichedPlatformSources.regions) {
       for (const platform of region.platforms) {
@@ -1575,8 +1654,9 @@ async function generateSnapshot(platformSources) {
   const regionalSummary = buildRegionalSummary(enrichedPlatformSources, products);
   const wikiSignals = buildWikiSignals(products);
   const metricsFramework = buildMetricsFramework({ products, opportunityPools, skuShortlist, generatedAt });
-  const alerts = buildAlerts({ products, metricsFramework });
+  const alerts = [...buildAlerts({ products, metricsFramework }), ...buildTaiwanCollectorAlerts(taiwanCollector)];
   const rankGroups = buildRankGroups(enrichedPlatformSources, products);
+  const taiwanRankings = buildTaiwanCollectorRankings(taiwanCollector, products);
 
   return {
     generatedAt,
@@ -1584,6 +1664,8 @@ async function generateSnapshot(platformSources) {
     dataMode: dataQuality.dataMode,
     dataModeNote: dataQuality.boundary,
     dataQuality,
+    taiwanCollector,
+    taiwanRankings,
     refreshCadenceHours,
     priceTiers,
     regions: enrichedPlatformSources.regions,

@@ -1,0 +1,7 @@
+{
+  "name": "shopee-tw-cdp-collector",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "dependencies": { "chrome-remote-interface": "^0.34.0" }
+}

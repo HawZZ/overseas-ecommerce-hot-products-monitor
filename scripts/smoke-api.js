@@ -60,6 +60,9 @@ try {
   const unauthorizedSnapshot = await fetch(`${baseUrl}/api/snapshot`);
   assert(unauthorizedSnapshot.status === 401, "snapshot must reject anonymous requests");
 
+  const unauthorizedCollector = await fetch(`${baseUrl}/api/collector/shopee-tw/status`);
+  assert(unauthorizedCollector.status === 401, "collector status must reject anonymous requests");
+
   const badLogin = await fetch(`${baseUrl}/api/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -75,6 +78,19 @@ try {
   assert(login.status === 200, "valid login must pass");
   const session = await login.json();
   assert(session.token, "login response must include token");
+
+  const collectorStatus = await fetch(`${baseUrl}/api/collector/shopee-tw/status`, {
+    headers: { Authorization: `Bearer ${session.token}` }
+  });
+  assert(collectorStatus.status === 200, "authenticated collector status must pass");
+
+  const pairing = await fetch(`${baseUrl}/api/collector/pairing-codes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` }
+  });
+  assert(pairing.status === 201, "collector pairing code creation must pass");
+  const pairingBody = await pairing.json();
+  assert(pairingBody.code && !JSON.stringify(pairingBody).includes("token"), "pairing response must not include collector token");
 
   const snapshot = await fetch(`${baseUrl}/api/snapshot`, {
     headers: { Authorization: `Bearer ${session.token}` }

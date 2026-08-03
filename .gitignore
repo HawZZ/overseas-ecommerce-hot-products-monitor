@@ -15,4 +15,5 @@ data/server.log
 data/vendor-exports/
 data/product-selection-wiki.md
 data/title-generator/
+data/collector/
 public/latest-snapshot.json
