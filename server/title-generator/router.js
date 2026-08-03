@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { createTitleStore } from "./store.js";
-import { deterministicCandidates, normalizeFacts, RULE_VERSION, ruleSources, validateTitle } from "./rules.js";
+import { normalizeFacts, RULE_VERSION, ruleSources, validateTitle } from "./rules.js";
 import { inspect1688 } from "./source-inspector.js";
 import { generateWithProvider } from "./provider.js";
 import { analyzeExperiment } from "./experiments.js";
@@ -12,7 +12,7 @@ const candidateSchema = z.object({ title: z.string().min(1), chineseKeywords: z.
 const observationSchema = z.object({ date: z.string().min(10), itemId: z.string().min(1), variant: z.enum(["baseline", "candidate"]), searchImpressions: z.number().nullable().optional(), searchClicks: z.number().nullable().optional(), productUv: z.number().nullable().optional(), orders: z.number().nullable().optional(), revenue: z.number().nullable().optional(), shopDau: z.number().nullable().optional(), adSpend: z.number().nullable().optional(), price: z.number().nullable().optional(), inStock: z.boolean().nullable().optional() });
 const rate = new Map();
 function clean(value) { return String(value || "").replace(/[\r\n]+/gu, " ").slice(0, 180); }
-function safeError(error) { const code = error?.message; return ["invalid_source_url", "unsafe_source_url", "source_unavailable", "source_too_large", "source_redirect_limit", "provider_not_configured", "provider_upstream_unavailable", "provider_request_rejected"].includes(code) ? code : "request_failed"; }
+function safeError(error) { const code = error?.code || error?.message; return ["invalid_source_url", "unsafe_source_url", "source_unavailable", "source_too_large", "source_redirect_limit", "provider_not_configured", "provider_upstream_unavailable", "provider_request_rejected", "provider_output_invalid"].includes(code) ? code : "request_failed"; }
 
 export function createTitleGeneratorRouter({ dataDir, requireSession, audit }) {
   const router = express.Router(); const store = createTitleStore(dataDir);
@@ -26,10 +26,17 @@ export function createTitleGeneratorRouter({ dataDir, requireSession, audit }) {
     const facts = normalizeFacts(factsSchema.parse(req.body?.facts)); const profile = req.body?.profile === "mall" ? "mall" : "standard";
     const key = req.auth.sub; const now = Date.now(); const entries = (rate.get(key) || []).filter((at) => at > now - 900000);
     if (entries.length >= 10) return res.status(429).json({ error: "rate_limited" }); rate.set(key, [...entries, now]);
-    let raw; let metadata = { provider: "rule-only", model: null, attempts: 0 };
-    try { const generated = await generateWithProvider(facts, profile); raw = z.object({ candidates: z.array(candidateSchema).length(5) }).parse(generated.result).candidates; metadata = generated.metadata; } catch (error) {
-      if (error.message !== "provider_not_configured") throw error;
-      raw = deterministicCandidates(facts, profile); // This does not represent model output and remains review-only.
+    let raw; let metadata;
+    try {
+      const generated = await generateWithProvider(facts, profile);
+      raw = z.object({ candidates: z.array(candidateSchema).length(5) }).parse(generated.result).candidates;
+      metadata = generated.metadata;
+    } catch (error) {
+      const code = error instanceof z.ZodError ? "provider_output_invalid" : safeError(error);
+      void audit("title_generation_failed", req, { errorType: code, ...(error.metadata || {}) });
+      const statusCode = code === "provider_upstream_unavailable" || code === "provider_timeout" || code === "provider_connection_error" || code === "provider_not_configured" ? 503 : 502;
+      res.status(statusCode).json({ error: code });
+      return;
     }
     const rules = await store.read("rules.json", { checkedAt: null, status: "unverified" });
     const candidates = raw.slice(0, 5).map((candidate) => {
@@ -37,7 +44,7 @@ export function createTitleGeneratorRouter({ dataDir, requireSession, audit }) {
       return { ...candidate, ...check, status: rules.status === "verified" && check.status === "pass" ? "pass" : "needs-review", trend: null, trendNote: "Google Trends 相對指數尚未取得；不等於 Shopee 搜尋量" };
     });
     const runs = await store.read("runs.json", []); const run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), profile, facts, candidates, metadata: { ...metadata, promptHash: metadata.promptHash || crypto.createHash("sha256").update(JSON.stringify(facts)).digest("hex") } };
-    await store.write("runs.json", [run, ...runs].slice(0, 100)); void audit("title_generated", req, { provider: metadata.provider, attempts: metadata.attempts }); res.json(run);
+    await store.write("runs.json", [run, ...runs].slice(0, 100)); void audit("title_generated", req, { promptHash: metadata.promptHash, provider: metadata.provider, model: metadata.model, attempts: metadata.attempts, latencyMs: metadata.latencyMs, tokenUsage: metadata.tokenUsage }); res.json(run);
   } catch (error) { const code = error instanceof z.ZodError ? "source_details_required" : safeError(error); res.status(code === "provider_upstream_unavailable" ? 503 : error instanceof z.ZodError ? 400 : 502).json({ error: code }); } });
   router.get("/title-generator/runs", async (_req, res, next) => { try { res.json({ runs: await store.read("runs.json", []) }); } catch (error) { next(error); } });
   router.delete("/title-generator/runs/:id", async (req, res, next) => { try { const runs = await store.read("runs.json", []); await store.write("runs.json", runs.filter((run) => run.id !== req.params.id)); res.status(204).end(); } catch (error) { next(error); } });

@@ -17,7 +17,7 @@ updated: 2026-08-03
 | 后端 | Express，本机 `127.0.0.1:8787`，HMAC 会话和服务 Token |
 | 外网入口 | Cloudflare quick tunnel；地址由 `public/config.json` 动态下发 |
 | 数据持久化 | 本机 JSON/CSV/Markdown 文件，没有数据库 |
-| 模型 | 默认关闭；仅 `npm run refresh:ai` 且配置模型变量时调用 OpenAI Responses API |
+| 模型 | 快照刷新不调用模型；标题生成仅在用户明确点击时读取本机 ai-crypto provider，Wiki 仍由 `npm run refresh:ai` 独立触发 |
 
 ## 已实现
 

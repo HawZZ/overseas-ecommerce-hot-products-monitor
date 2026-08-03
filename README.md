@@ -8,7 +8,7 @@
 - 工作流：`metrics-dashboard` 定义指标和告警，`market-segments` + `market-sizing` 做机会池，`competitor-analysis` + `pricing-strategy` 做 SKU 筛选，`cohort-analysis` + `sentiment-analysis` 验证趋势和口碑，`product-strategy` + `gtm-strategy` 沉淀选品 wiki。
 - 4P：每个重点 SKU 都落到 Product、Price、Place、Promotion 的执行动作。
 - 更新：`npm run refresh` 可手动刷新，`npm run scheduler` 默认每 12 小时刷新一次，可用 `REFRESH_CADENCE_HOURS` 调整。
-- 模型调用：默认不调用模型。只有运行 `npm run refresh:ai` 且设置 `OPENAI_API_KEY` 与 `OPENAI_MODEL` 时，才会用模型生成 wiki 分析。
+- 模型调用：默认刷新不调用模型。选品 Wiki 仅在运行 `npm run refresh:ai` 时调用；商品名生成器只在用户点击生成时由本机 API 读取 ai-crypto provider，模型失败不会用静态标题替代。
 
 ## 快速开始
 

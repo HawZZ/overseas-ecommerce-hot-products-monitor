@@ -94,9 +94,9 @@ try {
       facts: { productName: "收納盒", category: "居家生活", authorization: "unbranded", sellingPoints: "可堆疊收納" }
     })
   });
-  assert(generate.status === 200, "title generator must accept authenticated confirmed facts");
-  const run = await generate.json();
-  assert(run.candidates?.length === 5, "title generator must return exactly five candidates");
+  assert(generate.status === 503, "provider-disabled smoke mode must not return static title candidates");
+  const generationError = await generate.json();
+  assert(generationError.error === "provider_not_configured", "provider-disabled smoke mode must report provider_not_configured");
 
   const createExperiment = await fetch(`${baseUrl}/api/title-experiments`, {
     method: "POST",

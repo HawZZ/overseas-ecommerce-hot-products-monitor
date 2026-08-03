@@ -9,6 +9,7 @@
 | API authentication | Anonymous snapshot and wrong password return 401; valid login can read snapshot | `scripts/smoke-api.js`, `server/index.js` | existing; not CI-gated |
 | API binding/cadence | Smoke server reports loopback and 12-hour metadata | `scripts/smoke-api.js` | existing; not CI-gated |
 | Title API authentication | Authenticated status, five-candidate generation and experiment creation pass | `scripts/smoke-api.js` | existing; not CI-gated |
+| Title provider contract | Thinking disabled for primary, transient-only fallback, nested Responses parsing, invalid-output rejection and secret-free metadata | `tests/title-generator-provider.test.js` | existing; not CI-gated |
 | Main browser workflow | Login, Taiwan default, real-product view after country reset, charts, sourcing links, connector cards, no overflow/console error | `scripts/visual-check.js` | existing guarded live/manual; not CI-gated |
 | Buildability | Vite production build completes | `npm run build`, Pages workflow | existing; **CI-required** |
 | Pages publish | Push to main builds artifact and deploys Pages | `.github/workflows/pages.yml` | existing; CI-required for deployment |

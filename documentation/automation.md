@@ -31,6 +31,10 @@ The automation produces scores, recommendations and 4P/GTM suggestions. These ar
 
 There is no rate limit, retry/backoff, cost budget, response audit record or human approval after generation. The model cannot call tools and does not directly write inventory, orders, connectors or Git; the app writes its returned Markdown.
 
+## Shopee Taiwan title generation
+
+The authenticated title route calls the local `ai-crypto` provider only after an explicit user request. The primary DashScope request disables deep thinking for bounded JSON generation; transient failures alone can use the Responses fallback, which keeps `store:false` and `reasoning.effort:xhigh`. Provider output is Zod-validated and invalid or unavailable output is returned as an error; no static candidate is substituted. Local audit records contain only prompt hash, provider/model, attempt, latency, token usage and error category.
+
 ## External collectors
 
 - Google Trends collector calls the `google-trends-api` package for interest-over-time and related queries.

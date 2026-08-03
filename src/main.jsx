@@ -514,7 +514,7 @@ function useSnapshot() {
     const { response } = await requestWithFallback(path, { ...options, token: sessionToken });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error({ source_details_required: "请补齐已确认的商品资料", provider_not_configured: "本机模型尚未配置", provider_upstream_unavailable: "模型服务暂时不可用，请稍后重试", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
+      throw new Error({ source_details_required: "请补齐已确认的商品资料", provider_not_configured: "本机模型尚未配置", provider_upstream_unavailable: "模型服务暂时不可用，请稍后重试", provider_timeout: "模型响应超时，请稍后重试", provider_connection_error: "无法连接模型服务，请稍后重试", provider_request_rejected: "模型请求被拒绝，请检查本机 provider 配置", provider_output_invalid: "模型输出未完成或格式无效，请重试", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
     }
     return response.status === 204 ? null : response.json();
   }
@@ -2115,7 +2115,10 @@ function TitleGeneratorPage({ titleApi, analyzeRisk }) {
   const updateFact = (key, value) => setFacts((current) => ({ ...current, [key]: value }));
   const loadRuns = async () => setRuns((await titleApi("/api/title-generator/runs")).runs || []);
   const loadExperiments = async () => setExperiments((await titleApi("/api/title-experiments")).experiments || []);
-  useEffect(() => { if (view === "history") loadRuns().catch((error) => setMessage(error.message)); if (view === "experiment") loadExperiments().catch((error) => setMessage(error.message)); }, [view]);
+  useEffect(() => {
+    if (view === "history") titleApi("/api/title-generator/runs").then((result) => setRuns(result.runs || [])).catch((error) => setMessage(error.message));
+    if (view === "experiment") titleApi("/api/title-experiments").then((result) => setExperiments(result.experiments || [])).catch((error) => setMessage(error.message));
+  }, [titleApi, view]);
   async function inspect() { setLoading(true); setMessage(""); try { const result = await titleApi("/api/title-generator/source/inspect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceUrl: facts.sourceUrl }) }); setFacts((current) => ({ ...current, ...result.facts })); setMessage(result.message); } catch (error) { setMessage(error.message); } finally { setLoading(false); } }
   async function generate() { setLoading(true); setMessage(""); try { const result = await titleApi("/api/title-generator/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facts, profile }) }); setRun(result); setMessage("已生成 5 个候选。模型仅在此操作按需调用，标题不会自动写入 Shopee。"); } catch (error) { setMessage(error.message); } finally { setLoading(false); } }
   async function createExperiment(candidate) { try { await titleApi("/api/title-experiments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: facts.productName, baselineTitle: facts.currentTitle, candidateTitle: candidate.title, windowDays: 14 }) }); setView("experiment"); } catch (error) { setMessage(error.message); } }
