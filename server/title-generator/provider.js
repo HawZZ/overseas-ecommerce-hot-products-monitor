@@ -36,7 +36,12 @@ export async function generateWithProvider(facts, profile) {
   try { result = await chat(config.primary, input); } catch (error) {
     if (!transient(error.status) && safeError(error) !== "timeout") throw new Error("provider_request_rejected");
     if (!config.fallback?.key || !config.fallback.baseUrl || !config.fallback.model) throw new Error("provider_upstream_unavailable");
-    result = await responses(config.fallback, input); provider = "fallback"; attempts = 2;
+    try {
+      result = await responses(config.fallback, input);
+    } catch {
+      throw new Error("provider_upstream_unavailable");
+    }
+    provider = "fallback"; attempts = 2;
   }
   const value = { result, metadata: { promptHash: key, provider, model: provider === "primary" ? config.primary.model : config.fallback.model, attempts } };
   cache.set(key, { value, expiresAt: Date.now() + 300000 }); return value;
