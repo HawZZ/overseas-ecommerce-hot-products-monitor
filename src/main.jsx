@@ -514,7 +514,7 @@ function useSnapshot() {
     const { response } = await requestWithFallback(path, { ...options, token: sessionToken });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error({ source_details_required: "请补齐已确认的商品资料", provider_not_configured: "本机模型尚未配置；仅返回规则候选", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
+      throw new Error({ source_details_required: "请补齐已确认的商品资料", provider_not_configured: "本机模型尚未配置", provider_upstream_unavailable: "模型服务暂时不可用，请稍后重试", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
     }
     return response.status === 204 ? null : response.json();
   }

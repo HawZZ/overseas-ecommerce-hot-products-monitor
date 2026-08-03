@@ -11,7 +11,8 @@ export async function loadProviderConfig() {
     const secrets = YAML.parse(await fs.readFile("/etc/ai-crypto/secrets.production.yaml", "utf8")) || {};
     const primary = catalog?.llm?.primary || catalog?.providers?.primary || {};
     const fallback = catalog?.llm?.fallback || catalog?.providers?.fallback || {};
-    return { primary: { baseUrl: primary.base_url || primary.baseUrl, model: primary.model || primary.default_model, timeout: Number(primary.timeout_seconds || 60) * 1000, key: secrets?.llm?.api_key }, fallback: { baseUrl: fallback.base_url || fallback.baseUrl, model: fallback.model || fallback.default_model, timeout: Number(fallback.timeout_seconds || 60) * 1000, key: secrets?.llm?.fallback_api_key } };
+    const initialTimeout = Number(catalog.timeouts_seconds?.initial || 60) * 1000;
+    return { primary: { baseUrl: primary.base_url || primary.baseUrl, model: primary.model || primary.default_model, timeout: initialTimeout, key: secrets?.llm?.api_key }, fallback: { baseUrl: fallback.base_url || fallback.baseUrl, model: fallback.model || fallback.default_model, timeout: initialTimeout, key: secrets?.llm?.fallback_api_key } };
   } catch { return null; }
 }
 function prompt(facts, profile) { return `你是 Shopee 台灣商品標題編輯。只依據已確認事實，輸出 JSON: {"candidates":[{"title":"","chineseKeywords":[""],"englishKeywords":[""],"evidence":[""],"removedTerms":[""]}]}; 必須剛好5筆。標題使用台灣繁體中文，英文關鍵字不能進標題。規則檔位:${profile}。事實:${JSON.stringify(facts)}`; }

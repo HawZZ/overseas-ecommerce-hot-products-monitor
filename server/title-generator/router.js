@@ -38,7 +38,7 @@ export function createTitleGeneratorRouter({ dataDir, requireSession, audit }) {
     });
     const runs = await store.read("runs.json", []); const run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), profile, facts, candidates, metadata: { ...metadata, promptHash: metadata.promptHash || crypto.createHash("sha256").update(JSON.stringify(facts)).digest("hex") } };
     await store.write("runs.json", [run, ...runs].slice(0, 100)); void audit("title_generated", req, { provider: metadata.provider, attempts: metadata.attempts }); res.json(run);
-  } catch (error) { res.status(error instanceof z.ZodError ? 400 : 502).json({ error: error instanceof z.ZodError ? "source_details_required" : safeError(error) }); } });
+  } catch (error) { const code = error instanceof z.ZodError ? "source_details_required" : safeError(error); res.status(code === "provider_upstream_unavailable" ? 503 : error instanceof z.ZodError ? 400 : 502).json({ error: code }); } });
   router.get("/title-generator/runs", async (_req, res, next) => { try { res.json({ runs: await store.read("runs.json", []) }); } catch (error) { next(error); } });
   router.delete("/title-generator/runs/:id", async (req, res, next) => { try { const runs = await store.read("runs.json", []); await store.write("runs.json", runs.filter((run) => run.id !== req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
   router.get("/title-experiments", async (_req, res, next) => { try { const experiments = await store.read("experiments.json", []); res.json({ experiments: experiments.map((item) => ({ ...item, analysis: analyzeExperiment(item) })) }); } catch (error) { next(error); } });
