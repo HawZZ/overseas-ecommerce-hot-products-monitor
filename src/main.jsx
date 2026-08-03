@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowClockwise,
+  Copy,
   BellRinging,
   ChartBar,
   ChartLineUp,
@@ -25,6 +26,7 @@ import {
   ShieldWarning,
   ShoppingCart,
   Sparkle,
+  Trash,
   Tag,
   WarningCircle
 } from "@phosphor-icons/react";
@@ -507,6 +509,16 @@ function useSnapshot() {
     return response.json();
   }
 
+  async function titleApi(path, options = {}) {
+    if (!sessionToken) throw new Error("请先登录后再使用商品名生成器");
+    const { response } = await requestWithFallback(path, { ...options, token: sessionToken });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error({ source_details_required: "请补齐已确认的商品资料", provider_not_configured: "本机模型尚未配置；仅返回规则候选", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
+    }
+    return response.status === 204 ? null : response.json();
+  }
+
   return {
     snapshot,
     source,
@@ -526,7 +538,8 @@ function useSnapshot() {
     refresh,
     loadConnectors,
     saveConnectors,
-    analyzeRisk
+    analyzeRisk,
+    titleApi
   };
 }
 
@@ -550,7 +563,8 @@ function App() {
     refresh,
     loadConnectors,
     saveConnectors,
-    analyzeRisk
+    analyzeRisk,
+    titleApi
   } = useSnapshot();
   const [activePage, setActivePage] = useState("trends");
   const [regionId, setRegionId] = useState("all");
@@ -697,6 +711,8 @@ function App() {
             analyzeRisk={analyzeRisk}
           />
         )}
+
+        {activePage === "title-generator" && <TitleGeneratorPage titleApi={titleApi} analyzeRisk={analyzeRisk} />}
       </main>
     </div>
   );
@@ -741,7 +757,8 @@ function PageTabs({ activePage, onChange }) {
     { id: "trends", label: "爆品趋势", icon: ChartBar },
     { id: "regional", label: "区域品类", icon: MapTrifold },
     { id: "fourp", label: "4P工作台", icon: Package },
-    { id: "api-risk", label: "风险/API", icon: ShieldWarning }
+    { id: "api-risk", label: "风险/API", icon: ShieldWarning },
+    { id: "title-generator", label: "商品名生成器", icon: Sparkle }
   ];
 
   return (
@@ -2082,6 +2099,55 @@ function SecurityPanel({ snapshot }) {
       </div>
     </section>
   );
+}
+
+const EMPTY_TITLE_FACTS = { productName: "", category: "", description: "", specifications: "", material: "", use: "", currentTitle: "", brand: "", authorization: "unbranded", sellingPoints: "", sourceUrl: "" };
+
+function TitleGeneratorPage({ titleApi, analyzeRisk }) {
+  const [view, setView] = useState("generate");
+  const [facts, setFacts] = useState(EMPTY_TITLE_FACTS);
+  const [profile, setProfile] = useState("standard");
+  const [run, setRun] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [experiments, setExperiments] = useState([]);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const updateFact = (key, value) => setFacts((current) => ({ ...current, [key]: value }));
+  const loadRuns = async () => setRuns((await titleApi("/api/title-generator/runs")).runs || []);
+  const loadExperiments = async () => setExperiments((await titleApi("/api/title-experiments")).experiments || []);
+  useEffect(() => { if (view === "history") loadRuns().catch((error) => setMessage(error.message)); if (view === "experiment") loadExperiments().catch((error) => setMessage(error.message)); }, [view]);
+  async function inspect() { setLoading(true); setMessage(""); try { const result = await titleApi("/api/title-generator/source/inspect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceUrl: facts.sourceUrl }) }); setFacts((current) => ({ ...current, ...result.facts })); setMessage(result.message); } catch (error) { setMessage(error.message); } finally { setLoading(false); } }
+  async function generate() { setLoading(true); setMessage(""); try { const result = await titleApi("/api/title-generator/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facts, profile }) }); setRun(result); setMessage("已生成 5 个候选。模型仅在此操作按需调用，标题不会自动写入 Shopee。"); } catch (error) { setMessage(error.message); } finally { setLoading(false); } }
+  async function createExperiment(candidate) { try { await titleApi("/api/title-experiments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: facts.productName, baselineTitle: facts.currentTitle, candidateTitle: candidate.title, windowDays: 14 }) }); setView("experiment"); } catch (error) { setMessage(error.message); } }
+  return <section className="title-generator-page">
+    <div className="panel-heading title-heading"><div><h1>商品名生成器</h1><p>Shopee 台湾标题研究工具。候选须人工发布与验证，不承诺曝光、UV、DAU 或销量提升。</p></div><span className="data-badge">Shopee 台湾 / 1688</span></div>
+    <div className="compact-tabs title-tabs">{[["generate", "生成候选"], ["experiment", "效果实验"], ["history", "历史记录"]].map(([id, label]) => <button type="button" className={view === id ? "active" : ""} onClick={() => setView(id)} key={id}>{label}</button>)}</div>
+    {message && <p className="inline-note">{message}</p>}
+    {view === "generate" && <div className="title-layout">
+      <section className="panel title-form"><div className="section-title"><Sparkle size={18} weight="duotone" /><span>已确认商品事实</span></div>
+        <div className="title-fields">
+          {[['productName','品名 *'],['category','Shopee 类目 *'],['description','商品描述'],['specifications','规格/尺寸'],['material','材质'],['use','用途'],['currentTitle','当前标题'],['brand','品牌'],['sellingPoints','可验证卖点 *']].map(([key,label]) => <label key={key}>{label}<input value={facts[key]} onChange={(event) => updateFact(key,event.target.value)} /></label>)}
+          <label>品牌及授权状态<select value={facts.authorization} onChange={(event) => updateFact("authorization", event.target.value)}><option value="unbranded">无品牌</option><option value="own">自有品牌</option><option value="authorized">已授权品牌</option><option value="compatible-third-party">第三方兼容商品</option></select></label>
+          <label>规则档位<select value={profile} onChange={(event) => setProfile(event.target.value)}><option value="standard">一般卖场</option><option value="mall">蝦皮商城</option></select></label>
+          <label className="field-wide">1688 货源链接（可选）<div className="input-command"><input value={facts.sourceUrl} placeholder="https://detail.1688.com/..." onChange={(event) => updateFact("sourceUrl",event.target.value)} /><button type="button" className="secondary-button" disabled={loading || !facts.sourceUrl} onClick={inspect}>提取公开资料</button></div></label>
+        </div>
+        <button type="button" className="primary-button" disabled={loading} onClick={generate}><Sparkle size={16} weight="bold" />{loading ? "处理中" : "生成 5 个候选"}</button>
+      </section>
+      <section className="panel title-output"><div className="section-title"><ShieldCheck size={18} weight="duotone" /><span>标题检查与趋势线索</span></div><p className="muted-copy">Google Trends 固定台湾、过去 90 天的相对指数，不等于 Shopee 搜索量。资料、规则或趋势未验证时，只显示需人工复核。</p>
+        {!run && <div className="empty-state">先确认商品事实，再按需生成。英文发现词会独立保存，不自动加入标题。</div>}
+        {run?.candidates?.map((candidate, index) => <article className="title-candidate" key={`${candidate.title}-${index}`}><div className="candidate-top"><strong>{index + 1}. {candidate.title}</strong><span className={`risk-${candidate.status}`}>{candidate.status === "pass" ? "通过当前规则检查" : "需人工复核"}</span></div><p>搜索预览：{candidate.preview}</p><small>繁中关键词：{candidate.chineseKeywords.join("、") || "无"}</small><small>英文关键词：{candidate.englishKeywords.join("、") || "无"}</small><small>证据：{candidate.evidence.join("、")} / 移除词：{candidate.removedTerms.join("、") || "无"}</small>{candidate.issues?.length > 0 && <small className="danger-copy">检查：{candidate.issues.join("；")}</small>}<div className="candidate-actions"><button type="button" title="复制标题" onClick={() => navigator.clipboard?.writeText(candidate.title)}><Copy size={16} /></button><button type="button" className="secondary-button" onClick={() => createExperiment(candidate)}>建立实验</button><button type="button" className="secondary-button" onClick={() => analyzeRisk({ title: candidate.title, categoryName: facts.category, sourcingUrl: facts.sourceUrl, regionName: "东南亚", countryName: "台湾" }).then(() => setMessage("已将商品资料提交至风险核验链路。"))}>风险核验</button></div></article>)}
+      </section>
+    </div>}
+    {view === "history" && <section className="panel"><div className="panel-heading"><div><h2>本机生成历史</h2><p>只保存在本机后端，可删除。不会进入 GitHub Pages 构建。</p></div></div><div className="history-list">{runs.map((item) => <article key={item.id}><div><strong>{item.facts.productName}</strong><span>{new Date(item.createdAt).toLocaleString()}</span></div><p>{item.candidates.map((candidate) => candidate.title).join(" / ")}</p><button type="button" title="删除记录" onClick={async () => { await titleApi(`/api/title-generator/runs/${item.id}`, { method: "DELETE" }); loadRuns(); }}><Trash size={16} /></button></article>)}{!runs.length && <div className="empty-state">暂无本机生成记录。</div>}</div></section>}
+    {view === "experiment" && <TitleExperimentPanel experiments={experiments} titleApi={titleApi} reload={loadExperiments} setMessage={setMessage} />}
+  </section>;
+}
+
+function TitleExperimentPanel({ experiments, titleApi, reload, setMessage }) {
+  const [selected, setSelected] = useState(""); const [csv, setCsv] = useState("");
+  const current = experiments.find((item) => item.id === selected) || experiments[0];
+  async function importRows() { try { const [header, ...lines] = csv.trim().split(/\r?\n/u); const keys = header.split(","); const observations = lines.filter(Boolean).map((line) => Object.fromEntries(keys.map((key, index) => { const value = line.split(",")[index]; return [key, ["searchImpressions","searchClicks","productUv","orders","revenue","shopDau","adSpend","price"].includes(key) ? (value === "" ? null : Number(value)) : key === "inStock" ? (value === "" ? null : value === "true") : value]; }))); await titleApi(`/api/title-experiments/${current.id}/observations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ observations }) }); setMessage("已导入真实日级指标并重新计算。缺失值保持为空。"); reload(); } catch { setMessage("CSV 格式无效，请使用 date,itemId,variant,searchImpressions,searchClicks,productUv,orders,revenue 等字段。"); } }
+  return <section className="panel"><div className="panel-heading"><div><h2>真实指标效果实验</h2><p>非随机前后对照。主指标为商品 UV/日、搜索 CTR；CVR、客单价为护栏，店铺 DAU 仅作背景趋势。</p></div></div>{!experiments.length ? <div className="empty-state">从候选标题建立实验后，在 Shopee 手动修改标题，并导入真实数据。</div> : <><label>选择实验<select value={current?.id || ""} onChange={(event) => setSelected(event.target.value)}>{experiments.map((item) => <option key={item.id} value={item.id}>{item.name} / {item.windowDays}天</option>)}</select></label><div className="experiment-summary"><SummaryCell label="结论" value={current.analysis?.verdict === "positive" ? "正向" : current.analysis?.verdict === "negative" ? "负向" : "结论不足"} /><SummaryCell label="基线 UV/日" value={current.analysis?.baseline?.uvPerDay?.toFixed?.(2) || "缺失"} /><SummaryCell label="候选 CTR" value={current.analysis?.candidate?.ctr ? `${(current.analysis.candidate.ctr * 100).toFixed(2)}%` : "缺失"} /></div><p className="inline-note">{current.analysis?.reason}</p><label>导入 CSV<textarea rows="7" value={csv} onChange={(event) => setCsv(event.target.value)} placeholder="date,itemId,variant,searchImpressions,searchClicks,productUv,orders,revenue\n2026-08-01,sku-1,baseline,100,8,50,2,500" /></label><button type="button" className="primary-button" disabled={!csv.trim()} onClick={importRows}>导入真实日级指标</button></>}</section>;
 }
 
 createRoot(document.getElementById("root")).render(

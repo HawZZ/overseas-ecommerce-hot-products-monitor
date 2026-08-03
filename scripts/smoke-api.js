@@ -11,7 +11,8 @@ const env = {
   DASHBOARD_USERNAME: process.env.DASHBOARD_USERNAME || "smoke-user@example.com",
   DASHBOARD_PASSWORD: process.env.DASHBOARD_PASSWORD || "smoke-password-12345678901234567890",
   SESSION_SECRET: process.env.SESSION_SECRET || "smoke-session-secret-12345678901234567890",
-  CORS_ORIGINS: process.env.CORS_ORIGINS || "http://127.0.0.1:5173"
+  CORS_ORIGINS: process.env.CORS_ORIGINS || "http://127.0.0.1:5173",
+  TITLE_GENERATOR_DISABLE_PROVIDER: "1"
 };
 
 function assert(condition, message) {
@@ -79,6 +80,30 @@ try {
     headers: { Authorization: `Bearer ${session.token}` }
   });
   assert(snapshot.status === 200, "authenticated snapshot must pass");
+
+  const titleStatus = await fetch(`${baseUrl}/api/title-generator/status`, {
+    headers: { Authorization: `Bearer ${session.token}` }
+  });
+  assert(titleStatus.status === 200, "authenticated title status must pass");
+
+  const generate = await fetch(`${baseUrl}/api/title-generator/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({
+      profile: "standard",
+      facts: { productName: "收納盒", category: "居家生活", authorization: "unbranded", sellingPoints: "可堆疊收納" }
+    })
+  });
+  assert(generate.status === 200, "title generator must accept authenticated confirmed facts");
+  const run = await generate.json();
+  assert(run.candidates?.length === 5, "title generator must return exactly five candidates");
+
+  const createExperiment = await fetch(`${baseUrl}/api/title-experiments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ name: "smoke", windowDays: 7 })
+  });
+  assert(createExperiment.status === 201, "title experiment creation must pass");
 
   console.log("API smoke verification passed");
 } catch (error) {

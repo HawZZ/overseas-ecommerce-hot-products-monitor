@@ -4,7 +4,7 @@
 
 - 前端：Vite + React 静态看板，可发布到 GitHub Pages。
 - 后端：本机 Node API，只监听 `127.0.0.1`，用监控面板账号密码登录保护。
-- 数据：优先读取本机授权导出和连接器配置，缺失时使用监控种子生成可替换快照；每个 SKU 保留 90 天销量、搜索、成单率和客单价趋势。快照只保存在本机 `data/`，不发布到 GitHub Pages。
+- 数据：只读取本机授权导出和连接器配置；没有真实数据时显示待接入状态，不生成模拟榜单。每个 SKU 的 90 天销量、搜索、成单率和客单价趋势保留字段级来源状态。快照只保存在本机 `data/`，不发布到 GitHub Pages。
 - 工作流：`metrics-dashboard` 定义指标和告警，`market-segments` + `market-sizing` 做机会池，`competitor-analysis` + `pricing-strategy` 做 SKU 筛选，`cohort-analysis` + `sentiment-analysis` 验证趋势和口碑，`product-strategy` + `gtm-strategy` 沉淀选品 wiki。
 - 4P：每个重点 SKU 都落到 Product、Price、Place、Promotion 的执行动作。
 - 更新：`npm run refresh` 可手动刷新，`npm run scheduler` 默认每 12 小时刷新一次，可用 `REFRESH_CADENCE_HOURS` 调整。
@@ -35,6 +35,10 @@ npm run dev
 ## GitHub Pages
 
 前端是纯静态产物，后端不部署到 GitHub Pages。发布步骤见 [部署说明](./docs/deployment.md)。
+
+## LLM Wiki
+
+项目级工作约定见 [AGENTS.md](./AGENTS.md)。开始维护前先读 [LLM Wiki 索引](./docs/wiki/index.md) 和 [当前状态](./docs/wiki/current-state.md)；代码、CodeGraph 和数据入口分别见对应索引页。
 
 ## 数据边界
 

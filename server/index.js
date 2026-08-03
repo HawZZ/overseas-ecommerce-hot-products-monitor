@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createTitleGeneratorRouter } from "./title-generator/router.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -432,6 +433,8 @@ app.post("/api/refresh", requireSession, async (_req, res, next) => {
   }
 });
 
+app.use("/api", createTitleGeneratorRouter({ dataDir, requireSession, audit: writeAudit }));
+
 // ── Serve frontend static files from dist/ ──────────────────────────
 const distDir = path.resolve(rootDir, "dist");
 
@@ -449,8 +452,7 @@ app.get("*", (req, res, next) => {
 app.use((error, _req, res, _next) => {
   console.error(error);
   res.status(500).json({
-    error: "Internal server error",
-    message: error.message
+    error: "Internal server error"
   });
 });
 
