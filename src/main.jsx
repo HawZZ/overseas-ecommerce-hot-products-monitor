@@ -47,6 +47,7 @@ const FALLBACK_API_URL = "http://127.0.0.1:8787";
 const LEGACY_API_BASE_KEY = "apiUrl";
 const API_BASE_KEY = "hot-products-monitor-api-base";
 const API_BASE_MANUAL_KEY = "hot-products-monitor-api-base-manual";
+const SESSION_API_BASE_KEY = "hot-products-monitor-session-api-base";
 const SESSION_TOKEN_KEY = "hot-products-monitor-session-token";
 const SESSION_USER_KEY = "hot-products-monitor-session-user";
 const DEFAULT_SESSION_TOKEN = sessionStorage.getItem(SESSION_TOKEN_KEY) || sessionStorage.getItem("sessionToken") || "";
@@ -59,13 +60,11 @@ function normalizeApiUrl(value) {
 function clearManualApiBase() {
   localStorage.removeItem(API_BASE_KEY);
   localStorage.removeItem(API_BASE_MANUAL_KEY);
+  sessionStorage.removeItem(SESSION_API_BASE_KEY);
 }
 
 function readConfiguredApiBase(defaultApiBase) {
-  if (localStorage.getItem(API_BASE_MANUAL_KEY) === "1") {
-    return normalizeApiUrl(localStorage.getItem(API_BASE_KEY)) || defaultApiBase;
-  }
-  return defaultApiBase;
+  return normalizeApiUrl(sessionStorage.getItem(SESSION_API_BASE_KEY)) || defaultApiBase;
 }
 
 function rememberApiBase(candidate, defaultApiBase) {
@@ -73,8 +72,7 @@ function rememberApiBase(candidate, defaultApiBase) {
   const normalizedDefault = normalizeApiUrl(defaultApiBase) || FALLBACK_API_URL;
 
   if (normalized && normalized !== normalizedDefault) {
-    localStorage.setItem(API_BASE_KEY, normalized);
-    localStorage.setItem(API_BASE_MANUAL_KEY, "1");
+    sessionStorage.setItem(SESSION_API_BASE_KEY, normalized);
     return normalized;
   }
 
@@ -309,7 +307,8 @@ function useSnapshot() {
       const normalizedDefault = normalizeApiUrl(configuredApiBase) || FALLBACK_API_URL;
       localStorage.removeItem(LEGACY_API_BASE_KEY);
       setDefaultApiUrl(normalizedDefault);
-      setApiUrlState(readConfiguredApiBase(normalizedDefault));
+      clearManualApiBase();
+      setApiUrlState(normalizedDefault);
       setConfigLoaded(true);
       setStatus({
         state: hasInitialSession ? "loading" : "idle",
@@ -323,19 +322,16 @@ function useSnapshot() {
 
   const requestWithFallback = useCallback(async (path, options = {}, retryDefault = true, baseOverride = "") => {
     const base = normalizeApiUrl(baseOverride) || normalizeApiUrl(apiUrl) || defaultApiUrl;
+    const canRetryDefault = retryDefault && base && defaultApiUrl && base !== defaultApiUrl;
     try {
-      return {
-        response: await requestApi(base, path, options),
-        baseUrl: base
-      };
+      const response = await requestApi(base, path, options);
+      if (canRetryDefault && response.status >= 500) {
+        clearManualApiBase();
+        setApiUrlState(defaultApiUrl);
+        return { response: await requestApi(defaultApiUrl, path, options), baseUrl: defaultApiUrl };
+      }
+      return { response, baseUrl: base };
     } catch (error) {
-      const storedBase = normalizeApiUrl(localStorage.getItem(API_BASE_KEY));
-      const canRetryDefault = retryDefault
-        && localStorage.getItem(API_BASE_MANUAL_KEY) === "1"
-        && storedBase
-        && defaultApiUrl
-        && storedBase !== defaultApiUrl;
-
       if (!canRetryDefault) {
         throw formatConnectionError(error);
       }
@@ -390,6 +386,11 @@ function useSnapshot() {
 
   function setApiUrl(value) {
     setApiUrlState(value);
+  }
+
+  function restoreDefaultApi() {
+    clearManualApiBase();
+    setApiUrlState(defaultApiUrl);
   }
 
   async function login() {
@@ -517,11 +518,11 @@ function useSnapshot() {
   }
 
   async function titleApi(path, options = {}) {
-    if (!sessionToken) throw new Error("请先登录后再使用商品名生成器");
+    if (!sessionToken) throw new Error("请先登录后再使用标题/详情生成器");
     const { response } = await requestWithFallback(path, { ...options, token: sessionToken });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error({ source_details_required: "请补齐已确认的商品资料", provider_not_configured: "本机模型尚未配置", provider_upstream_unavailable: "模型服务暂时不可用，请稍后重试", provider_timeout: "模型响应超时，请稍后重试", provider_connection_error: "无法连接模型服务，请稍后重试", provider_request_rejected: "模型请求被拒绝，请检查本机 provider 配置", provider_output_invalid: "模型输出未完成或格式无效，请重试", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
+      throw new Error({ source_details_required: "请补齐已确认的商品资料", invalid_candidate: "请选择有效的标题候选", title_run_not_found: "标题生成记录不存在或已删除", provider_not_configured: "本机模型尚未配置", provider_upstream_unavailable: "模型服务暂时不可用，请稍后重试", provider_timeout: "模型响应超时，请稍后重试", provider_connection_error: "无法连接模型服务，请稍后重试", provider_request_rejected: "模型请求被拒绝，请检查本机 provider 配置", provider_output_invalid: "模型输出未完成或格式无效，请重试", rate_limited: "15分钟内最多生成10次，请稍后再试" }[body.error] || "请求未完成");
     }
     return response.status === 204 ? null : response.json();
   }
@@ -546,6 +547,7 @@ function useSnapshot() {
     sessionToken,
     sessionUser,
     setApiUrl,
+    restoreDefaultApi,
     setUsername,
     setPassword,
     login,
@@ -681,6 +683,7 @@ function App() {
           apiUrl={apiUrl}
           sessionToken={sessionToken}
           setApiUrl={setApiUrl}
+          restoreDefaultApi={restoreDefaultApi}
           refresh={refresh}
           logout={logout}
         />
@@ -736,7 +739,7 @@ function App() {
   );
 }
 
-function ConnectionPanel({ apiUrl, sessionToken, setApiUrl, refresh, logout }) {
+function ConnectionPanel({ apiUrl, sessionToken, setApiUrl, restoreDefaultApi, refresh, logout }) {
   return (
     <section className="connection-strip" aria-label="后端连接">
       <div className="section-title">
@@ -748,6 +751,9 @@ function ConnectionPanel({ apiUrl, sessionToken, setApiUrl, refresh, logout }) {
           API 地址
           <input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} />
         </label>
+        <button className="secondary-button" onClick={restoreDefaultApi} type="button" title="恢复线上配置中的 API 地址">
+          恢复默认
+        </button>
         <label>
           登录会话
           <input
@@ -776,7 +782,7 @@ function PageTabs({ activePage, onChange }) {
     { id: "regional", label: "区域品类", icon: MapTrifold },
     { id: "fourp", label: "4P工作台", icon: Package },
     { id: "api-risk", label: "风险/API", icon: ShieldWarning },
-    { id: "title-generator", label: "商品名生成器", icon: Sparkle }
+    { id: "title-generator", label: "标题/详情生成器", icon: Sparkle }
   ];
 
   return (
@@ -2162,6 +2168,7 @@ function TitleGeneratorPage({ titleApi, analyzeRisk }) {
   const [experiments, setExperiments] = useState([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detailLoadingIndex, setDetailLoadingIndex] = useState(null);
   const updateFact = (key, value) => setFacts((current) => ({ ...current, [key]: value }));
   const loadRuns = async () => setRuns((await titleApi("/api/title-generator/runs")).runs || []);
   const loadExperiments = async () => setExperiments((await titleApi("/api/title-experiments")).experiments || []);
@@ -2171,9 +2178,10 @@ function TitleGeneratorPage({ titleApi, analyzeRisk }) {
   }, [titleApi, view]);
   async function inspect() { setLoading(true); setMessage(""); try { const result = await titleApi("/api/title-generator/source/inspect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceUrl: facts.sourceUrl }) }); setFacts((current) => ({ ...current, ...result.facts })); setMessage(result.message); } catch (error) { setMessage(error.message); } finally { setLoading(false); } }
   async function generate() { setLoading(true); setMessage(""); try { const result = await titleApi("/api/title-generator/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facts, profile }) }); setRun(result); setMessage("已生成 5 个候选。模型仅在此操作按需调用，标题不会自动写入 Shopee。"); } catch (error) { setMessage(error.message); } finally { setLoading(false); } }
+  async function generateDetail(index) { setDetailLoadingIndex(index); setMessage(""); try { const result = await titleApi(`/api/title-generator/runs/${run.id}/details`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidateIndex: index }) }); setRun((current) => ({ ...current, details: { ...(current.details || {}), [index]: result } })); setMessage("详情已生成。请核对事实、规则状态和风险后再发布。"); } catch (error) { setMessage(error.message); } finally { setDetailLoadingIndex(null); } }
   async function createExperiment(candidate) { try { await titleApi("/api/title-experiments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: facts.productName, baselineTitle: facts.currentTitle, candidateTitle: candidate.title, windowDays: 14 }) }); setView("experiment"); } catch (error) { setMessage(error.message); } }
   return <section className="title-generator-page">
-    <div className="panel-heading title-heading"><div><h1>商品名生成器</h1><p>Shopee 台湾标题研究工具。候选须人工发布与验证，不承诺曝光、UV、DAU 或销量提升。</p></div><span className="data-badge">Shopee 台湾 / 1688</span></div>
+    <div className="panel-heading title-heading"><div><h1>商品标题/详情生成器</h1><p>Shopee 台湾商品文案研究工具。标题和详情须人工发布与验证，不承诺曝光、UV、DAU 或销量提升。</p></div><span className="data-badge">Shopee 台湾 / 1688</span></div>
     <div className="compact-tabs title-tabs">{[["generate", "生成候选"], ["experiment", "效果实验"], ["history", "历史记录"]].map(([id, label]) => <button type="button" className={view === id ? "active" : ""} onClick={() => setView(id)} key={id}>{label}</button>)}</div>
     {message && <p className="inline-note">{message}</p>}
     {view === "generate" && <div className="title-layout">
@@ -2188,12 +2196,16 @@ function TitleGeneratorPage({ titleApi, analyzeRisk }) {
       </section>
       <section className="panel title-output"><div className="section-title"><ShieldCheck size={18} weight="duotone" /><span>标题检查与趋势线索</span></div><p className="muted-copy">Google Trends 固定台湾、过去 90 天的相对指数，不等于 Shopee 搜索量。资料、规则或趋势未验证时，只显示需人工复核。</p>
         {!run && <div className="empty-state">先确认商品事实，再按需生成。英文发现词会独立保存，不自动加入标题。</div>}
-        {run?.candidates?.map((candidate, index) => <article className="title-candidate" key={`${candidate.title}-${index}`}><div className="candidate-top"><strong>{index + 1}. {candidate.title}</strong><span className={`risk-${candidate.status}`}>{candidate.status === "pass" ? "通过当前规则检查" : "需人工复核"}</span></div><p>搜索预览：{candidate.preview}</p><small>繁中关键词：{candidate.chineseKeywords.join("、") || "无"}</small><small>英文关键词：{candidate.englishKeywords.join("、") || "无"}</small><small>证据：{candidate.evidence.join("、")} / 移除词：{candidate.removedTerms.join("、") || "无"}</small>{candidate.issues?.length > 0 && <small className="danger-copy">检查：{candidate.issues.join("；")}</small>}<div className="candidate-actions"><button type="button" title="复制标题" onClick={() => navigator.clipboard?.writeText(candidate.title)}><Copy size={16} /></button><button type="button" className="secondary-button" onClick={() => createExperiment(candidate)}>建立实验</button><button type="button" className="secondary-button" onClick={() => analyzeRisk({ title: candidate.title, categoryName: facts.category, sourcingUrl: facts.sourceUrl, regionName: "东南亚", countryName: "台湾" }).then(() => setMessage("已将商品资料提交至风险核验链路。"))}>风险核验</button></div></article>)}
+        {run?.candidates?.map((candidate, index) => { const detailRun = run.details?.[index]; const detail = detailRun?.detail; return <article className="title-candidate" key={`${candidate.title}-${index}`}><div className="candidate-top"><strong>{index + 1}. {candidate.title}</strong><span className={`risk-${candidate.status}`}>{candidate.status === "pass" ? "通过当前规则检查" : "需人工复核"}</span></div><p>搜索预览：{candidate.preview}</p><small>繁中关键词：{candidate.chineseKeywords.join("、") || "无"}</small><small>英文关键词：{candidate.englishKeywords.join("、") || "无"}</small><small>证据：{candidate.evidence.join("、")} / 移除词：{candidate.removedTerms.join("、") || "无"}</small>{candidate.issues?.length > 0 && <small className="danger-copy">检查：{candidate.issues.join("；")}</small>}<div className="candidate-actions"><button type="button" title="复制标题" onClick={() => navigator.clipboard?.writeText(candidate.title)}><Copy size={16} /></button><button type="button" className="secondary-button" disabled={detailLoadingIndex !== null} onClick={() => generateDetail(index)}>{detailLoadingIndex === index ? "生成中" : detail ? "重新生成详情" : "生成详情"}</button><button type="button" className="secondary-button" onClick={() => createExperiment(candidate)}>建立实验</button><button type="button" className="secondary-button" onClick={() => analyzeRisk({ title: candidate.title, categoryName: facts.category, sourcingUrl: facts.sourceUrl, regionName: "东南亚", countryName: "台湾" }).then(() => setMessage("已将商品资料提交至风险核验链路。"))}>风险核验</button></div>{detail && <DetailResult detail={detail} onCopy={() => navigator.clipboard?.writeText(detail.plainText)} />}</article>; })}
       </section>
     </div>}
     {view === "history" && <section className="panel"><div className="panel-heading"><div><h2>本机生成历史</h2><p>只保存在本机后端，可删除。不会进入 GitHub Pages 构建。</p></div></div><div className="history-list">{runs.map((item) => <article key={item.id}><div><strong>{item.facts.productName}</strong><span>{new Date(item.createdAt).toLocaleString()}</span></div><p>{item.candidates.map((candidate) => candidate.title).join(" / ")}</p><button type="button" title="删除记录" onClick={async () => { await titleApi(`/api/title-generator/runs/${item.id}`, { method: "DELETE" }); loadRuns(); }}><Trash size={16} /></button></article>)}{!runs.length && <div className="empty-state">暂无本机生成记录。</div>}</div></section>}
     {view === "experiment" && <TitleExperimentPanel experiments={experiments} titleApi={titleApi} reload={loadExperiments} setMessage={setMessage} />}
   </section>;
+}
+
+function DetailResult({ detail, onCopy }) {
+  return <section className="detail-result"><div className="candidate-top"><strong>商品详情</strong><span className={`risk-${detail.status}`}>{detail.status === "pass" ? "通过当前规则检查" : "需人工复核"}</span></div><pre>{detail.plainText}</pre><small>事实引用：{[detail.summary, ...(detail.sections || []).flatMap((section) => section.items || [])].flatMap((item) => item.evidence || []).filter((value, index, values) => values.indexOf(value) === index).join("、")}</small>{detail.issues?.length > 0 && <small className="danger-copy">检查：{detail.issues.join("；")}</small>}<div className="candidate-actions"><button type="button" title="复制完整详情" onClick={onCopy}><Copy size={16} /></button></div></section>;
 }
 
 function TitleExperimentPanel({ experiments, titleApi, reload, setMessage }) {

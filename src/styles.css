@@ -1917,6 +1917,8 @@ select:focus {
 .title-candidate:first-of-type { border-top: 0; }
 .candidate-top, .candidate-actions, .history-list article { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .title-candidate p, .title-candidate small { margin: 0; color: var(--muted-strong); font-size: 12px; line-height: 1.45; }
+.detail-result { display: grid; gap: 8px; margin-top: 8px; padding: 12px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface-soft); }
+.detail-result pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font: 12px/1.55 inherit; }
 .danger-copy { color: var(--danger) !important; }
 .candidate-actions { justify-content: flex-start; }
 .candidate-actions > button:first-child, .history-list button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--surface-line); border-radius: 6px; background: var(--surface-muted); color: var(--muted-strong); }

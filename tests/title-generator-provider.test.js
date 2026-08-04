@@ -64,6 +64,21 @@ test("primary disables thinking and returns five candidates", async () => {
   assert.match(calls[0].options.headers.Authorization, /^Bearer /u);
 });
 
+test("detail task uses separate output budget and keeps title contract available", async () => {
+  clearProviderCache();
+  const calls = [];
+  const detailOutput = JSON.stringify({ detail: { summary: { text: "適用日常旅行。", evidence: ["productName"] }, sections: [{ key: "features", items: [{ text: "輕便。", evidence: ["sellingPoints"] }] }, { key: "usage", items: [{ text: "套於行李箱外部。", evidence: ["use"] }] }] } });
+  const result = await generateWithProvider(facts, "standard", {
+    task: "detail",
+    selectedTitle: "適用行李箱套",
+    config: config(),
+    fetchImpl: fetchQueue([response({ choices: [{ finish_reason: "stop", message: { content: detailOutput } }] })], calls)
+  });
+  assert.equal(result.metadata.task, "detail");
+  assert.equal(calls[0].body.max_tokens, 2600);
+  assert.deepEqual(result.result.detail.sections[0].items[0].evidence, ["sellingPoints"]);
+});
+
 test("transient primary failure uses nested Responses output with required controls", async () => {
   clearProviderCache();
   const calls = [];

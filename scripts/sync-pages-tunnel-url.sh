@@ -39,9 +39,10 @@ PYCONFIG
 
 check_url() {
   local candidate="$1"
-  local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$candidate/health" || true)"
-  [ "$code" = "200" ]
+  local body acao
+  body="$(curl -fsS --max-time 10 -H 'Origin: https://hawzz.github.io' "$candidate/health" || true)"
+  acao="$(curl -sS -D - -o /dev/null --max-time 10 -H 'Origin: https://hawzz.github.io' "$candidate/health" | awk 'tolower($1) == "access-control-allow-origin:" { print $2 }' | tr -d '\r' | tail -1)"
+  [[ "$body" == *'"ok":true'* && "$body" == *'"auth":"dashboard-login"'* && "$acao" == "https://hawzz.github.io" ]]
 }
 
 candidate_urls() {

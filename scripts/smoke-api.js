@@ -102,6 +102,13 @@ try {
   });
   assert(titleStatus.status === 200, "authenticated title status must pass");
 
+  const invalidDetailRun = await fetch(`${baseUrl}/api/title-generator/runs/not-a-run/details`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ candidateIndex: 0 })
+  });
+  assert(invalidDetailRun.status === 404, "detail generation must reject an unknown title run");
+
   const generate = await fetch(`${baseUrl}/api/title-generator/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
