@@ -22,6 +22,7 @@ function clean(value) { return String(value || "").replace(/[\r\n]+/gu, " ").sli
 function safeError(error) { const code = error?.code || error?.message; return ["invalid_source_url", "unsafe_source_url", "source_unavailable", "source_too_large", "source_redirect_limit", "provider_not_configured", "provider_upstream_unavailable", "provider_request_rejected", "provider_output_invalid", "provider_timeout", "provider_connection_error"].includes(code) ? code : "request_failed"; }
 function providerStatus(code) { return ["provider_upstream_unavailable", "provider_timeout", "provider_connection_error", "provider_not_configured"].includes(code) ? 503 : 502; }
 function takeRateSlot(subject) { const now = Date.now(); const entries = (rate.get(subject) || []).filter((at) => at > now - 900000); if (entries.length >= 10) return false; rate.set(subject, [...entries, now]); return true; }
+function zodIssuePaths(error) { return error instanceof z.ZodError ? error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code })) : []; }
 
 export function createTitleGeneratorRouter({ dataDir, requireSession, audit }) {
   const router = express.Router(); const store = createTitleStore(dataDir);
@@ -65,7 +66,7 @@ export function createTitleGeneratorRouter({ dataDir, requireSession, audit }) {
       raw = detailSchema.parse(generated.result?.detail); metadata = generated.metadata;
     } catch (error) {
       const code = error instanceof z.ZodError ? "provider_output_invalid" : safeError(error);
-      void audit("title_detail_generation_failed", req, { task: "detail", errorType: code, ...(error.metadata || {}) });
+      void audit("title_detail_generation_failed", req, { task: "detail", errorType: code, validation: zodIssuePaths(error), ...(error.metadata || {}) });
       return res.status(providerStatus(code)).json({ error: code });
     }
     const detail = normalizeDetail(raw); const check = validateDetail(detail, run.facts, run.profile);
