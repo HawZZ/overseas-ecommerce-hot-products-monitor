@@ -574,6 +574,7 @@ function App() {
     sessionToken,
     sessionUser,
     setApiUrl,
+    restoreDefaultApi,
     setUsername,
     setPassword,
     login,
