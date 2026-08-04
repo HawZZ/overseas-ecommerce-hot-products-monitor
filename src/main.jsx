@@ -138,6 +138,11 @@ function formatTrend(value, suffix = "%") {
   return `${sign}${numeric.toFixed(1)}${suffix}`;
 }
 
+function formatFixed(value, digits = 2, prefix = "", suffix = "") {
+  if (value == null || !Number.isFinite(Number(value))) return "缺失";
+  return `${prefix}${Number(value).toFixed(digits)}${suffix}`;
+}
+
 function formatUsdM(value) {
   if (value == null || Number.isNaN(Number(value))) return "待接入";
   return `$${formatNumber(Number(value) || 0)}M`;
@@ -1662,7 +1667,7 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
                   <span className={`stage-pill ${group.stage}`}>{stageLabel(group.stage)}</span>
                   <span className="score-value">{group.opportunityScore}</span>
                   <span>{formatPercent(group.pricing.grossMarginRate)}</span>
-                  <span>{group.sentiment.score.toFixed(2)}</span>
+                  <span>{formatFixed(group.sentiment.score)}</span>
                   <span className={group.summary.searchChange >= 0 ? "trend-up" : "trend-down"}>{formatTrend(group.summary.searchChange)}</span>
                 </button>
               </div>
@@ -1692,7 +1697,7 @@ function SkuScreening({ products, selectedProductId, onSelect }) {
                       <span>{formatNumber(product.summary.sales90d)}</span>
                       <span>{formatNumber(product.summary.search90d)}</span>
                       <span>{formatPercent(product.summary.conversionRate)}</span>
-                      <span>${product.summary.averageOrderValue.toFixed(2)}</span>
+                      <span>{formatFixed(product.summary.averageOrderValue, 2, "$")}</span>
                       <span className="score-value">{product.opportunityScore}</span>
                     </button>
                   ))}
@@ -1836,8 +1841,8 @@ function ProductDetail({ product }) {
       <div className="summary-grid">
         <SummaryCell label="90天销量" value={formatNumber(product.summary.sales90d)} trend={formatTrend(product.summary.salesChange)} />
         <SummaryCell label="90天搜索" value={formatNumber(product.summary.search90d)} trend={formatTrend(product.summary.searchChange)} />
-        <SummaryCell label="当前成单率" value={formatPercent(product.summary.conversionRate)} trend={`${product.summary.conversionChange > 0 ? "+" : ""}${product.summary.conversionChange.toFixed(2)}pp`} />
-        <SummaryCell label="客单价" value={`$${product.summary.averageOrderValue.toFixed(2)}`} trend={formatTrend(product.summary.aovChange)} />
+        <SummaryCell label="当前成单率" value={formatPercent(product.summary.conversionRate)} trend={product.summary.conversionChange == null ? "缺失" : `${product.summary.conversionChange > 0 ? "+" : ""}${formatFixed(product.summary.conversionChange, 2)}pp`} />
+        <SummaryCell label="客单价" value={formatFixed(product.summary.averageOrderValue, 2, "$")} trend={formatTrend(product.summary.aovChange)} />
       </div>
 
       <div className="metric-tabs" role="tablist" aria-label="趋势指标">
@@ -1910,7 +1915,7 @@ function SummaryCell({ label, value, trend }) {
 function TrendTooltip({ active, payload, label, metric }) {
   if (!active || !payload?.length) return null;
   const value = payload[0].value;
-  const formatted = metric === "conversionRate" ? `${value.toFixed(2)}%` : metric === "averageOrderValue" ? `$${value.toFixed(2)}` : formatNumber(value);
+  const formatted = metric === "conversionRate" ? formatFixed(value, 2, "", "%") : metric === "averageOrderValue" ? formatFixed(value, 2, "$") : value == null ? "缺失" : formatNumber(value);
   return (
     <div className="tooltip">
       <strong>{label}</strong>
