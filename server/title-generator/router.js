@@ -13,7 +13,8 @@ const factKeySchema = z.enum(["productName", "category", "description", "specifi
 const detailItemSchema = z.object({ text: z.string().min(1).max(240), evidence: z.array(factKeySchema).min(1).max(3) }).strict();
 const detailSchema = z.object({
   summary: detailItemSchema,
-  sections: z.array(z.object({ key: z.enum(["features", "specifications", "suitableFor", "usage", "packageContents", "notices"]), items: z.array(detailItemSchema).min(1).max(8) }).strict()).min(2).max(6)
+  // 商品介紹計入 2-6 個有效段落，因此其餘段落允許只有 1-5 個。
+  sections: z.array(z.object({ key: z.enum(["features", "specifications", "suitableFor", "usage", "packageContents", "notices"]), items: z.array(detailItemSchema).min(1).max(8) }).strict()).min(1).max(5)
 }).strict();
 const observationSchema = z.object({ date: z.string().min(10), itemId: z.string().min(1), variant: z.enum(["baseline", "candidate"]), searchImpressions: z.number().nullable().optional(), searchClicks: z.number().nullable().optional(), productUv: z.number().nullable().optional(), orders: z.number().nullable().optional(), revenue: z.number().nullable().optional(), shopDau: z.number().nullable().optional(), adSpend: z.number().nullable().optional(), price: z.number().nullable().optional(), inStock: z.boolean().nullable().optional() });
 const rate = new Map();

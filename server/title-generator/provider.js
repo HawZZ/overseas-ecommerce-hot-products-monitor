@@ -68,7 +68,7 @@ function titlePrompt(facts, profile) {
 }
 
 function detailPrompt(facts, profile, selectedTitle) {
-  return `你是 Shopee 台灣商品詳情編輯。只依據已確認事實與已選標題，輸出 JSON: {"detail":{"summary":{"text":"","evidence":["productName"]},"sections":[{"key":"features","items":[{"text":"","evidence":["sellingPoints"]}]}]}}。section key 只能是 features、specifications、suitableFor、usage、packageContents、notices。必須有2至6個段落，每段1至8項。evidence 只能使用 productName、category、description、specifications、material、use、brand、authorization、sellingPoints，且該事實必須存在。不可捏造認證、保固、產地、數量、配件、價格、庫存、物流或療效。包裝內容只有事實明確包含時才能輸出。使用台灣繁體中文，不使用英文發現詞、表情、導外資訊或誇大詞。第三方相容商品必須完整使用適用、通用、專用或可用。規則檔位:${profile}。已選標題:${selectedTitle}。事實:${JSON.stringify(facts)}`;
+  return `你是 Shopee 台灣商品詳情編輯。只依據已確認事實與已選標題，輸出 JSON: {"detail":{"summary":{"text":"","evidence":["productName"]},"sections":[{"key":"features","items":[{"text":"","evidence":["sellingPoints"]}]}]}}。商品介紹 summary 加上 sections 合計必須是2至6個有效段落，因此 sections 必須剛好1至5個；每段1至8項。section key 只能是 features、specifications、suitableFor、usage、packageContents、notices。evidence 只能使用 productName、category、description、specifications、material、use、brand、authorization、sellingPoints，且該事實必須存在。不可捏造認證、保固、產地、數量、配件、價格、庫存、物流或療效。包裝內容只有事實明確包含時才能輸出。使用台灣繁體中文，不使用英文發現詞、表情、導外資訊或誇大詞。第三方相容商品必須完整使用適用、通用、專用或可用。規則檔位:${profile}。已選標題:${selectedTitle}。事實:${JSON.stringify(facts)}`;
 }
 
 function tokenUsage(data) {

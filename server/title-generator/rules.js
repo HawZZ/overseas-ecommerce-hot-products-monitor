@@ -89,7 +89,7 @@ export function validateDetail(detail, facts, profile = "standard") {
   const issues = [];
   const entries = [detail.summary, ...detail.sections.flatMap((section) => section.items)];
   if (!detail.summary.text) issues.push("缺少商品介紹");
-  if (detail.sections.length < 2 || detail.sections.length > 6) issues.push("詳情段落數不符合要求");
+  if (detail.sections.length < 1 || detail.sections.length > 5) issues.push("詳情有效段落數不符合要求");
   if (detail.sections.some((section) => !detailHeadings[section.key] || !section.items.length || section.items.length > 8)) issues.push("詳情段落結構無效");
   if (entries.some((entry) => !entry.text || entry.text.length > 240 || !entry.evidence?.length || entry.evidence.some((key) => !factKeys.has(key) || !facts[key]))) issues.push("詳情缺少可用事實引用");
   const plainText = renderDetail(detail);
